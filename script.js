@@ -723,15 +723,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     document.getElementById('tool-compare')?.addEventListener('click', function () {
-        if (compareActive) {
-            if (comparePanelEl && comparePanelEl.style.display === 'none') {
-                comparePanelEl.style.display = 'flex';
-            } else {
-                disableCompare();
-            }
-        } else {
-            enableCompare();
-        }
+        if (compareActive) { disableCompare(); } else { enableCompare(); }
+    });
+    document.getElementById('compare-toggle')?.addEventListener('change', function () {
+        if (this.checked) { enableCompare(); } else { disableCompare(); }
     });
 
     document.getElementById('tool-geojson')?.addEventListener('click', function () {
@@ -829,13 +824,13 @@ basemaps.satellite.once('load', () => {
 
 const CMP_LABELS = { satellite: 'Satellite', esriLight: 'Esri Light', osm: 'OSM' };
 const CMP_DATA_PANES = [
-    { key: 'terrasses',    pane: 'pane-terrasses',    label: 'Terrasses' },
-    { key: 'ruptures',     pane: 'pane-ruptures',     label: 'Ruptures de pentes' },
-    { key: 'probabilites', pane: 'pane-probabilites', label: 'Probabilite' },
-    { key: 'mnt',          pane: 'pane-mnt',          label: 'MNT' },
-    { key: 'ombrage',      pane: 'pane-ombrage',      label: 'Ombrage' },
-    { key: 'communes',     pane: 'pane-communes',     label: 'Communes' },
-    { key: 'parcelles',    pane: 'pane-parcelles',    label: 'Parcellaire' },
+    { key: 'terrasses',    pane: 'pane-terrasses',    label: 'Terrasses',          checkId: 'layer-terrasses' },
+    { key: 'ruptures',     pane: 'pane-ruptures',     label: 'Ruptures de pentes', checkId: 'layer-ruptures' },
+    { key: 'probabilites', pane: 'pane-probabilites', label: 'Probabilite',        checkId: 'layer-probabilites' },
+    { key: 'mnt',          pane: 'pane-mnt',          label: 'MNT',               checkId: 'layer-mnt-ombrage' },
+    { key: 'ombrage',      pane: 'pane-ombrage',      label: 'Ombrage',            checkId: 'layer-ombrage' },
+    { key: 'communes',     pane: 'pane-communes',     label: 'Communes',           checkId: 'layer-communes' },
+    { key: 'parcelles',    pane: 'pane-parcelles',    label: 'Parcellaire',        checkId: 'layer-parcelles' },
 ];
 let compareActive = false;
 let compareLeftLayer = null;
@@ -843,7 +838,6 @@ let compareLeftKey = 'esriLight';
 let compareRightKey = 'satellite';
 let compareDivX = 0.5;
 let compareDivEl = null;
-let comparePanelEl = null;
 let cmpLayerSides = Object.fromEntries(CMP_DATA_PANES.map(d => [d.key, 'both']));
 
 function _applyCompareClip() {
@@ -883,60 +877,42 @@ function _dragCompare(clientX) {
     _applyCompareClip();
 }
 
-function _buildCompareModal() {
-    const overlay = document.createElement('div');
-    overlay.className = 'cmp-overlay';
-    overlay.id = 'cmp-overlay';
-    const activeLayers = CMP_DATA_PANES.filter(({ key }) => {
-        const chk = document.getElementById('layer-' + key);
-        return chk && chk.checked;
-    });
-    const layerRows = activeLayers.map(({ key, label }) => {
+function _buildCompareSidebarContent() {
+    const panel = document.getElementById('compare-sidebar-panel');
+    if (!panel) return;
+    const layerRows = CMP_DATA_PANES.map(({ key, label, checkId }) => {
+        const chk = document.getElementById(checkId);
+        const active = chk && chk.checked;
         const isLeft  = cmpLayerSides[key] !== 'right';
         const isRight = cmpLayerSides[key] !== 'left';
-        return `<tr>
+        return `<tr${active ? '' : ' class="cmp-row-inactive"'}>
             <td class="cmp-td-name">${label}</td>
-            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="left"${isLeft ? ' checked' : ''}></td>
-            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="right"${isRight ? ' checked' : ''}></td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="left"${isLeft ? ' checked' : ''}${active ? '' : ' disabled'}></td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="right"${isRight ? ' checked' : ''}${active ? '' : ' disabled'}></td>
         </tr>`;
     }).join('');
-    overlay.innerHTML = `
-        <div class="cmp-modal">
-            <div class="cmp-modal-header">
-                <span><i class="fas fa-columns"></i> Comparateur de cartes</span>
-                <button class="cmp-modal-close" id="cmp-modal-close">&#x2715;</button>
-            </div>
-            <div class="cmp-modal-body">
-                <table class="cmp-table">
-                    <thead>
-                        <tr>
-                            <th class="cmp-th-name"></th>
-                            <th class="cmp-th-side cmp-th-left"><i class="fas fa-arrow-left"></i> Gauche</th>
-                            <th class="cmp-th-side cmp-th-right">Droite <i class="fas fa-arrow-right"></i></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="cmp-section-row"><td colspan="3">Fond de carte</td></tr>
-                        ${Object.entries(CMP_LABELS).map(([k, v]) => `
-                        <tr>
-                            <td class="cmp-td-name">${v}</td>
-                            <td class="cmp-td-check"><input type="radio" name="cmp-bm-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}></td>
-                            <td class="cmp-td-check"><input type="radio" name="cmp-bm-right" value="${k}"${compareRightKey === k ? ' checked' : ''}></td>
-                        </tr>`).join('')}
-                        ${activeLayers.length ? `<tr class="cmp-section-row"><td colspan="3">Couches actives</td></tr>${layerRows}` : ''}
-                    </tbody>
-                </table>
-            </div>
-            <div class="cmp-modal-footer">
-                <button class="cmp-btn-close" id="cmp-btn-close">Fermer</button>
-            </div>
-        </div>`;
-    const modal = overlay.querySelector('.cmp-modal');
-    const closeOverlay = () => { overlay.style.display = 'none'; };
-    overlay.querySelector('#cmp-modal-close').addEventListener('click', closeOverlay);
-    overlay.querySelector('#cmp-btn-close').addEventListener('click', closeOverlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
-    overlay.querySelectorAll('input[name="cmp-bm-left"]').forEach(radio => {
+    panel.innerHTML = `
+        <table class="cmp-sb-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th class="cmp-th-left">&#9664; G</th>
+                    <th class="cmp-th-right">D &#9654;</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="cmp-section-row"><td colspan="3">Fond de carte</td></tr>
+                ${Object.entries(CMP_LABELS).map(([k, v]) => `
+                <tr>
+                    <td class="cmp-td-name">${v}</td>
+                    <td class="cmp-td-check"><input type="radio" name="cmp-bm-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}></td>
+                    <td class="cmp-td-check"><input type="radio" name="cmp-bm-right" value="${k}"${compareRightKey === k ? ' checked' : ''}></td>
+                </tr>`).join('')}
+                <tr class="cmp-section-row"><td colspan="3">Couches</td></tr>
+                ${layerRows}
+            </tbody>
+        </table>`;
+    panel.querySelectorAll('input[name="cmp-bm-left"]').forEach(radio => {
         radio.addEventListener('change', () => {
             compareLeftKey = radio.value;
             if (compareLeftLayer) map.removeLayer(compareLeftLayer);
@@ -945,30 +921,29 @@ function _buildCompareModal() {
             _applyCompareClip();
         });
     });
-    overlay.querySelectorAll('input[name="cmp-bm-right"]').forEach(radio => {
+    panel.querySelectorAll('input[name="cmp-bm-right"]').forEach(radio => {
         radio.addEventListener('change', () => {
             compareRightKey = radio.value;
             switchBasemap(compareRightKey);
         });
     });
-    overlay.querySelectorAll('.cmp-layer-chk').forEach(chk => {
+    panel.querySelectorAll('.cmp-layer-chk').forEach(chk => {
         chk.addEventListener('change', () => {
             const layerKey = chk.dataset.layer;
-            const leftChk  = overlay.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
-            const rightChk = overlay.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="right"]`);
+            const leftChk  = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
+            const rightChk = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="right"]`);
             const l = leftChk?.checked, r = rightChk?.checked;
             cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : 'right';
             _applyCompareClip();
         });
     });
-    L.DomEvent.disableClickPropagation(modal);
-    L.DomEvent.disableScrollPropagation(modal);
-    return overlay;
 }
 
 function enableCompare() {
     compareActive = true;
     document.getElementById('tool-compare')?.classList.add('compare-active');
+    const toggle = document.getElementById('compare-toggle');
+    if (toggle) toggle.checked = true;
     compareRightKey = currentBasemapKey;
     compareLeftKey = currentBasemapKey === 'satellite' ? 'esriLight' : 'satellite';
     CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
@@ -977,6 +952,8 @@ function enableCompare() {
     compareDivX = 0.5;
     _applyCompareClip();
     map.on('move zoomend', _applyCompareClip);
+    const panel = document.getElementById('compare-sidebar-panel');
+    if (panel) { panel.style.display = 'block'; _buildCompareSidebarContent(); }
     const mapEl = document.getElementById('map');
     compareDivEl = document.createElement('div');
     compareDivEl.className = 'compare-divider';
@@ -1007,18 +984,19 @@ function enableCompare() {
         document.addEventListener('touchmove', onMove, { passive: false });
         document.addEventListener('touchend', onEnd);
     });
-    comparePanelEl = _buildCompareModal();
-    document.body.appendChild(comparePanelEl);
 }
 
 function disableCompare() {
     compareActive = false;
     map.off('move zoomend', _applyCompareClip);
     document.getElementById('tool-compare')?.classList.remove('compare-active');
+    const toggle = document.getElementById('compare-toggle');
+    if (toggle) toggle.checked = false;
     if (compareLeftLayer) { map.removeLayer(compareLeftLayer); compareLeftLayer = null; }
     _clearAllClips();
     if (compareDivEl) { compareDivEl.remove(); compareDivEl = null; }
-    if (comparePanelEl) { comparePanelEl.remove(); comparePanelEl = null; }
+    const panel = document.getElementById('compare-sidebar-panel');
+    if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
     CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
 }
 
