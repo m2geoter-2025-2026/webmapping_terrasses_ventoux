@@ -723,7 +723,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     document.getElementById('tool-compare')?.addEventListener('click', function () {
-        if (compareActive) { disableCompare(); } else { enableCompare(); }
+        if (compareActive) {
+            if (comparePanelEl && comparePanelEl.style.display === 'none') {
+                comparePanelEl.style.display = 'flex';
+            } else {
+                disableCompare();
+            }
+        } else {
+            enableCompare();
+        }
     });
 
     document.getElementById('tool-geojson')?.addEventListener('click', function () {
@@ -875,92 +883,87 @@ function _dragCompare(clientX) {
     _applyCompareClip();
 }
 
-function _buildComparePanel() {
-    const panel = document.createElement('div');
-    panel.className = 'compare-panel';
-    panel.id = 'compare-panel';
-    const layerRows = CMP_DATA_PANES.map(({ key, label }) => {
+function _buildCompareModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'cmp-overlay';
+    overlay.id = 'cmp-overlay';
+    const activeLayers = CMP_DATA_PANES.filter(({ key }) => {
         const chk = document.getElementById('layer-' + key);
-        if (!chk || !chk.checked) return '';
-        const sides = ['left', 'both', 'right'];
-        const sideLabels = ['G', 'G+D', 'D'];
-        return `<div class="cmp-layer-row">
-            <span class="cmp-layer-name">${label}</span>
-            <div class="cmp-side-btns">${sides.map((s, i) =>
-                `<button class="cmp-side-btn${cmpLayerSides[key] === s ? ' active' : ''}" data-layer="${key}" data-side="${s}">${sideLabels[i]}</button>`
-            ).join('')}</div>
-        </div>`;
-    }).filter(Boolean).join('');
-    panel.innerHTML = `
-        <div class="cmp-panel-header">
-            <span><i class="fas fa-columns"></i> Comparateur</span>
-            <button class="cmp-panel-close" id="cmp-close-btn">&#x2715;</button>
-        </div>
-        <div class="cmp-panel-body">
-            <div class="cmp-cols-wrap">
-                <div class="cmp-col">
-                    <div class="cmp-col-title">GAUCHE</div>
-                    ${Object.entries(CMP_LABELS).map(([k, v]) =>
-                        `<label class="cmp-radio${compareLeftKey === k ? ' active' : ''}">
-                            <input type="radio" name="cmp-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}> ${v}
-                        </label>`
-                    ).join('')}
-                </div>
-                <div class="cmp-col-sep"></div>
-                <div class="cmp-col">
-                    <div class="cmp-col-title">DROITE</div>
-                    ${Object.entries(CMP_LABELS).map(([k, v]) =>
-                        `<label class="cmp-radio${compareRightKey === k ? ' active' : ''}">
-                            <input type="radio" name="cmp-right" value="${k}"${compareRightKey === k ? ' checked' : ''}> ${v}
-                        </label>`
-                    ).join('')}
-                </div>
-            </div>
-            ${layerRows ? `<div class="cmp-layers-title">Couches par volet</div><div class="cmp-layers">${layerRows}</div>` : ''}
-        </div>`;
-    panel.querySelector('#cmp-close-btn').addEventListener('click', e => {
-        e.stopPropagation();
-        disableCompare();
-        document.getElementById('tool-compare')?.classList.remove('compare-active');
+        return chk && chk.checked;
     });
-    panel.querySelectorAll('input[name="cmp-left"]').forEach(radio => {
+    const layerRows = activeLayers.map(({ key, label }) => {
+        const isLeft  = cmpLayerSides[key] !== 'right';
+        const isRight = cmpLayerSides[key] !== 'left';
+        return `<tr>
+            <td class="cmp-td-name">${label}</td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="left"${isLeft ? ' checked' : ''}></td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="right"${isRight ? ' checked' : ''}></td>
+        </tr>`;
+    }).join('');
+    overlay.innerHTML = `
+        <div class="cmp-modal">
+            <div class="cmp-modal-header">
+                <span><i class="fas fa-columns"></i> Comparateur de cartes</span>
+                <button class="cmp-modal-close" id="cmp-modal-close">&#x2715;</button>
+            </div>
+            <div class="cmp-modal-body">
+                <table class="cmp-table">
+                    <thead>
+                        <tr>
+                            <th class="cmp-th-name"></th>
+                            <th class="cmp-th-side cmp-th-left"><i class="fas fa-arrow-left"></i> Gauche</th>
+                            <th class="cmp-th-side cmp-th-right">Droite <i class="fas fa-arrow-right"></i></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="cmp-section-row"><td colspan="3">Fond de carte</td></tr>
+                        ${Object.entries(CMP_LABELS).map(([k, v]) => `
+                        <tr>
+                            <td class="cmp-td-name">${v}</td>
+                            <td class="cmp-td-check"><input type="radio" name="cmp-bm-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}></td>
+                            <td class="cmp-td-check"><input type="radio" name="cmp-bm-right" value="${k}"${compareRightKey === k ? ' checked' : ''}></td>
+                        </tr>`).join('')}
+                        ${activeLayers.length ? `<tr class="cmp-section-row"><td colspan="3">Couches actives</td></tr>${layerRows}` : ''}
+                    </tbody>
+                </table>
+            </div>
+            <div class="cmp-modal-footer">
+                <button class="cmp-btn-close" id="cmp-btn-close">Fermer</button>
+            </div>
+        </div>`;
+    const modal = overlay.querySelector('.cmp-modal');
+    const closeOverlay = () => { overlay.style.display = 'none'; };
+    overlay.querySelector('#cmp-modal-close').addEventListener('click', closeOverlay);
+    overlay.querySelector('#cmp-btn-close').addEventListener('click', closeOverlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
+    overlay.querySelectorAll('input[name="cmp-bm-left"]').forEach(radio => {
         radio.addEventListener('change', () => {
             compareLeftKey = radio.value;
             if (compareLeftLayer) map.removeLayer(compareLeftLayer);
             compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
             compareLeftLayer.addTo(map);
             _applyCompareClip();
-            panel.querySelectorAll('label.cmp-radio').forEach(l => {
-                const r = l.querySelector('input[name="cmp-left"]');
-                if (r) l.classList.toggle('active', r.value === compareLeftKey);
-            });
         });
     });
-    panel.querySelectorAll('input[name="cmp-right"]').forEach(radio => {
+    overlay.querySelectorAll('input[name="cmp-bm-right"]').forEach(radio => {
         radio.addEventListener('change', () => {
             compareRightKey = radio.value;
             switchBasemap(compareRightKey);
-            panel.querySelectorAll('label.cmp-radio').forEach(l => {
-                const r = l.querySelector('input[name="cmp-right"]');
-                if (r) l.classList.toggle('active', r.value === compareRightKey);
-            });
         });
     });
-    panel.querySelectorAll('.cmp-side-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            const layerKey = btn.dataset.layer;
-            const side = btn.dataset.side;
-            cmpLayerSides[layerKey] = side;
-            btn.closest('.cmp-side-btns').querySelectorAll('.cmp-side-btn').forEach(b =>
-                b.classList.toggle('active', b.dataset.side === side)
-            );
+    overlay.querySelectorAll('.cmp-layer-chk').forEach(chk => {
+        chk.addEventListener('change', () => {
+            const layerKey = chk.dataset.layer;
+            const leftChk  = overlay.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
+            const rightChk = overlay.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="right"]`);
+            const l = leftChk?.checked, r = rightChk?.checked;
+            cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : 'right';
             _applyCompareClip();
         });
     });
-    L.DomEvent.disableClickPropagation(panel);
-    L.DomEvent.disableScrollPropagation(panel);
-    return panel;
+    L.DomEvent.disableClickPropagation(modal);
+    L.DomEvent.disableScrollPropagation(modal);
+    return overlay;
 }
 
 function enableCompare() {
@@ -1004,8 +1007,8 @@ function enableCompare() {
         document.addEventListener('touchmove', onMove, { passive: false });
         document.addEventListener('touchend', onEnd);
     });
-    comparePanelEl = _buildComparePanel();
-    mapEl.appendChild(comparePanelEl);
+    comparePanelEl = _buildCompareModal();
+    document.body.appendChild(comparePanelEl);
 }
 
 function disableCompare() {
