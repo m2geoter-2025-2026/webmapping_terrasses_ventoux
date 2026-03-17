@@ -2056,10 +2056,26 @@ input:checked + .slider:before { transform: translateX(16px); }
 .compare-divider { position: absolute; top: 0; bottom: 0; width: 3px; background: rgba(255,255,255,0.9); cursor: ew-resize; z-index: 800; box-shadow: 0 0 8px rgba(0,0,0,0.4); transform: translateX(-50%); }
 .compare-handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 32px; height: 32px; background: rgba(255,255,255,0.95); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.3); color: var(--accent-color); font-size: 12px; }
 .tool-btn.compare-active { background: var(--accent-color); color: #fff; }
-.compare-selector { position: absolute; z-index: 810; display: flex; gap: 3px; background: rgba(10,24,15,0.85); backdrop-filter: blur(10px); border: 1px solid rgba(78,200,120,0.25); border-radius: 20px; padding: 3px 5px; overflow: hidden; }
-.compare-sel-btn { border: none; background: transparent; color: rgba(255,255,255,0.55); font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 16px; cursor: pointer; font-family: var(--font-body); transition: background var(--t-fast), color var(--t-fast); white-space: nowrap; }
-.compare-sel-btn:hover { color: #fff; background: rgba(78,200,120,0.2); }
-.compare-sel-btn.active { background: var(--accent-color); color: #fff; }
+.compare-panel { position: absolute; top: 60px; right: 10px; z-index: 820; background: rgba(10,24,15,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(78,200,120,0.25); border-radius: 10px; min-width: 280px; color: #e2e8f0; font-family: var(--font-body); font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+.cmp-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(255,255,255,0.7); }
+.cmp-panel-close { background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+.cmp-panel-close:hover { color: #fff; }
+.cmp-panel-body { padding: 10px 12px 12px; }
+.cmp-cols-wrap { display: flex; gap: 0; margin-bottom: 10px; }
+.cmp-col { flex: 1; }
+.cmp-col-sep { width: 1px; background: rgba(255,255,255,0.12); margin: 0 10px; }
+.cmp-col-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.45); margin-bottom: 6px; }
+.cmp-radio { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; transition: background var(--t-fast); font-size: 12px; }
+.cmp-radio:hover { background: rgba(255,255,255,0.07); }
+.cmp-radio.active { background: rgba(26,82,118,0.4); color: #fff; }
+.cmp-radio input { accent-color: var(--accent-color); cursor: pointer; }
+.cmp-layers-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.45); margin: 8px 0 6px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; }
+.cmp-layer-row { display: flex; align-items: center; justify-content: space-between; padding: 3px 0; }
+.cmp-layer-name { font-size: 12px; color: rgba(255,255,255,0.7); }
+.cmp-side-btns { display: flex; gap: 2px; }
+.cmp-side-btn { border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.4); font-size: 10px; font-weight: 600; font-family: var(--font-body); padding: 2px 7px; border-radius: 4px; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.cmp-side-btn:hover { color: #fff; border-color: rgba(255,255,255,0.4); }
+.cmp-side-btn.active { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
 
 .floating-legend { background: rgba(10,24,15,0.82); backdrop-filter: blur(10px); border: 1px solid rgba(78,200,120,0.2); border-radius: var(--radius-md); padding: 8px 12px; min-width: 130px; pointer-events: auto; margin-bottom: 32px !important; }
 .floating-legend-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-light); margin-bottom: 6px; }

@@ -135,7 +135,7 @@ const Toolbar = L.Control.extend({
             '<button id="tool-export"     class="tool-btn" title="Capture PNG (C)"><i class="fas fa-camera"></i><span class="tool-label">Capture</span></button>' +
             '<div class="toolbar-sep"></div>' +
             '<button id="tool-compare"    class="tool-btn" title="Comparer les fonds (B)"><i class="fas fa-columns"></i><span class="tool-label">Comparer</span></button>' +
-            '<button id="tool-geojson"    class="tool-btn" title="Exporter GeoJSON visible (G)"><i class="fas fa-file-export"></i><span class="tool-label">GeoJSON</span></button>';
+            '<button id="tool-geojson"    class="tool-btn" title="Exporter les terrasses visibles (G)"><i class="fas fa-file-export"></i><span class="tool-label">Export Terrasses</span></button>';
         return bar;
     }
 });
@@ -820,71 +820,147 @@ basemaps.satellite.once('load', () => {
 });
 
 const CMP_LABELS = { satellite: 'Satellite', esriLight: 'Esri Light', osm: 'OSM' };
+const CMP_DATA_PANES = [
+    { key: 'terrasses',    pane: 'pane-terrasses',    label: 'Terrasses' },
+    { key: 'ruptures',     pane: 'pane-ruptures',     label: 'Ruptures de pentes' },
+    { key: 'probabilites', pane: 'pane-probabilites', label: 'Probabilite' },
+    { key: 'mnt',          pane: 'pane-mnt',          label: 'MNT' },
+    { key: 'ombrage',      pane: 'pane-ombrage',      label: 'Ombrage' },
+    { key: 'communes',     pane: 'pane-communes',     label: 'Communes' },
+    { key: 'parcelles',    pane: 'pane-parcelles',    label: 'Parcellaire' },
+];
 let compareActive = false;
 let compareLeftLayer = null;
 let compareLeftKey = 'esriLight';
 let compareRightKey = 'satellite';
 let compareDivX = 0.5;
 let compareDivEl = null;
+let comparePanelEl = null;
+let cmpLayerSides = Object.fromEntries(CMP_DATA_PANES.map(d => [d.key, 'both']));
 
 function _applyCompareClip() {
-    const pane = map.getPane('pane-compare');
-    if (!pane) return;
     const mapSize = map.getSize();
     const nw = map.containerPointToLayerPoint([0, 0]);
     const se = map.containerPointToLayerPoint(mapSize);
     const clipX = nw.x + Math.round(mapSize.x * compareDivX);
-    pane.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
+    const cmpPane = map.getPane('pane-compare');
+    if (cmpPane) cmpPane.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
+    CMP_DATA_PANES.forEach(({ key, pane: paneName }) => {
+        const pane = map.getPane(paneName);
+        if (!pane) return;
+        const side = cmpLayerSides[key];
+        if (side === 'left') {
+            pane.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
+        } else if (side === 'right') {
+            pane.style.clip = `rect(${nw.y}px,${se.x}px,${se.y}px,${clipX}px)`;
+        } else {
+            pane.style.clip = '';
+        }
+    });
+}
+
+function _clearAllClips() {
+    const cmpPane = map.getPane('pane-compare');
+    if (cmpPane) cmpPane.style.clip = '';
+    CMP_DATA_PANES.forEach(({ pane: paneName }) => {
+        const p = map.getPane(paneName);
+        if (p) p.style.clip = '';
+    });
 }
 
 function _dragCompare(clientX) {
     const rect = document.getElementById('map').getBoundingClientRect();
     compareDivX = Math.max(0.05, Math.min(0.95, (clientX - rect.left) / rect.width));
-    compareDivEl.style.left = (compareDivX * 100) + '%';
+    if (compareDivEl) compareDivEl.style.left = (compareDivX * 100) + '%';
     _applyCompareClip();
-    _refreshCmpSels();
 }
 
-function _buildCmpSel(side) {
-    const el = document.createElement('div');
-    el.className = 'compare-selector compare-selector-' + side;
-    el.innerHTML = Object.entries(CMP_LABELS).map(([k, v]) =>
-        `<button class="compare-sel-btn" data-key="${k}">${v}</button>`
-    ).join('');
-    el.querySelectorAll('.compare-sel-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            const key = btn.dataset.key;
-            if (side === 'left') {
-                compareLeftKey = key;
-                if (compareLeftLayer) map.removeLayer(compareLeftLayer);
-                compareLeftLayer = BASEMAP_TILES[key]('pane-compare');
-                compareLeftLayer.addTo(map);
-                _applyCompareClip();
-            } else {
-                compareRightKey = key;
-                switchBasemap(key);
-                document.querySelector(`input[name="basemap"][value="${key}"]`)?.click();
-            }
-            _refreshCmpSels();
+function _buildComparePanel() {
+    const panel = document.createElement('div');
+    panel.className = 'compare-panel';
+    panel.id = 'compare-panel';
+    const layerRows = CMP_DATA_PANES.map(({ key, label }) => {
+        const chk = document.getElementById('layer-' + key);
+        if (!chk || !chk.checked) return '';
+        const sides = ['left', 'both', 'right'];
+        const sideLabels = ['G', 'G+D', 'D'];
+        return `<div class="cmp-layer-row">
+            <span class="cmp-layer-name">${label}</span>
+            <div class="cmp-side-btns">${sides.map((s, i) =>
+                `<button class="cmp-side-btn${cmpLayerSides[key] === s ? ' active' : ''}" data-layer="${key}" data-side="${s}">${sideLabels[i]}</button>`
+            ).join('')}</div>
+        </div>`;
+    }).filter(Boolean).join('');
+    panel.innerHTML = `
+        <div class="cmp-panel-header">
+            <span><i class="fas fa-columns"></i> Comparateur</span>
+            <button class="cmp-panel-close" id="cmp-close-btn">&#x2715;</button>
+        </div>
+        <div class="cmp-panel-body">
+            <div class="cmp-cols-wrap">
+                <div class="cmp-col">
+                    <div class="cmp-col-title">GAUCHE</div>
+                    ${Object.entries(CMP_LABELS).map(([k, v]) =>
+                        `<label class="cmp-radio${compareLeftKey === k ? ' active' : ''}">
+                            <input type="radio" name="cmp-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}> ${v}
+                        </label>`
+                    ).join('')}
+                </div>
+                <div class="cmp-col-sep"></div>
+                <div class="cmp-col">
+                    <div class="cmp-col-title">DROITE</div>
+                    ${Object.entries(CMP_LABELS).map(([k, v]) =>
+                        `<label class="cmp-radio${compareRightKey === k ? ' active' : ''}">
+                            <input type="radio" name="cmp-right" value="${k}"${compareRightKey === k ? ' checked' : ''}> ${v}
+                        </label>`
+                    ).join('')}
+                </div>
+            </div>
+            ${layerRows ? `<div class="cmp-layers-title">Couches par volet</div><div class="cmp-layers">${layerRows}</div>` : ''}
+        </div>`;
+    panel.querySelector('#cmp-close-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        disableCompare();
+        document.getElementById('tool-compare')?.classList.remove('compare-active');
+    });
+    panel.querySelectorAll('input[name="cmp-left"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            compareLeftKey = radio.value;
+            if (compareLeftLayer) map.removeLayer(compareLeftLayer);
+            compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
+            compareLeftLayer.addTo(map);
+            _applyCompareClip();
+            panel.querySelectorAll('label.cmp-radio').forEach(l => {
+                const r = l.querySelector('input[name="cmp-left"]');
+                if (r) l.classList.toggle('active', r.value === compareLeftKey);
+            });
         });
     });
-    return el;
-}
-
-function _refreshCmpSels() {
-    if (!compareDivEl) return;
-    const rp = ((1 - compareDivX) * 100).toFixed(1);
-    const lp = (compareDivX * 100).toFixed(1);
-    if (compareDivEl._selLeft) {
-        compareDivEl._selLeft.style.maxWidth = `calc(${lp}% - 16px)`;
-        compareDivEl._selLeft.querySelectorAll('.compare-sel-btn').forEach(b => b.classList.toggle('active', b.dataset.key === compareLeftKey));
-    }
-    if (compareDivEl._selRight) {
-        compareDivEl._selRight.style.left = `calc(${lp}% + 8px)`;
-        compareDivEl._selRight.style.maxWidth = `calc(${rp}% - 16px)`;
-        compareDivEl._selRight.querySelectorAll('.compare-sel-btn').forEach(b => b.classList.toggle('active', b.dataset.key === compareRightKey));
-    }
+    panel.querySelectorAll('input[name="cmp-right"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            compareRightKey = radio.value;
+            switchBasemap(compareRightKey);
+            panel.querySelectorAll('label.cmp-radio').forEach(l => {
+                const r = l.querySelector('input[name="cmp-right"]');
+                if (r) l.classList.toggle('active', r.value === compareRightKey);
+            });
+        });
+    });
+    panel.querySelectorAll('.cmp-side-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const layerKey = btn.dataset.layer;
+            const side = btn.dataset.side;
+            cmpLayerSides[layerKey] = side;
+            btn.closest('.cmp-side-btns').querySelectorAll('.cmp-side-btn').forEach(b =>
+                b.classList.toggle('active', b.dataset.side === side)
+            );
+            _applyCompareClip();
+        });
+    });
+    L.DomEvent.disableClickPropagation(panel);
+    L.DomEvent.disableScrollPropagation(panel);
+    return panel;
 }
 
 function enableCompare() {
@@ -892,27 +968,18 @@ function enableCompare() {
     document.getElementById('tool-compare')?.classList.add('compare-active');
     compareRightKey = currentBasemapKey;
     compareLeftKey = currentBasemapKey === 'satellite' ? 'esriLight' : 'satellite';
+    CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
     compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
     compareLeftLayer.addTo(map);
     compareDivX = 0.5;
     _applyCompareClip();
-    map.on('move', _applyCompareClip);
+    map.on('move zoomend', _applyCompareClip);
     const mapEl = document.getElementById('map');
     compareDivEl = document.createElement('div');
     compareDivEl.className = 'compare-divider';
     compareDivEl.style.left = '50%';
     compareDivEl.innerHTML = '<div class="compare-handle"><i class="fas fa-arrows-left-right"></i></div>';
-    const selLeft = _buildCmpSel('left');
-    const selRight = _buildCmpSel('right');
-    selLeft.style.left = '8px';
-    selLeft.style.top = '8px';
-    selRight.style.top = '8px';
-    compareDivEl._selLeft = selLeft;
-    compareDivEl._selRight = selRight;
-    mapEl.appendChild(selLeft);
-    mapEl.appendChild(selRight);
     mapEl.appendChild(compareDivEl);
-    _refreshCmpSels();
     L.DomEvent.on(compareDivEl, 'mousedown', function (e) {
         L.DomEvent.stop(e);
         map.dragging.disable();
@@ -937,21 +1004,19 @@ function enableCompare() {
         document.addEventListener('touchmove', onMove, { passive: false });
         document.addEventListener('touchend', onEnd);
     });
+    comparePanelEl = _buildComparePanel();
+    mapEl.appendChild(comparePanelEl);
 }
 
 function disableCompare() {
     compareActive = false;
-    map.off('move', _applyCompareClip);
+    map.off('move zoomend', _applyCompareClip);
     document.getElementById('tool-compare')?.classList.remove('compare-active');
     if (compareLeftLayer) { map.removeLayer(compareLeftLayer); compareLeftLayer = null; }
-    const pane = map.getPane('pane-compare');
-    if (pane) { pane.style.clip = ''; pane.style.clipPath = ''; }
-    if (compareDivEl) {
-        compareDivEl._selLeft?.remove();
-        compareDivEl._selRight?.remove();
-        compareDivEl.remove();
-        compareDivEl = null;
-    }
+    _clearAllClips();
+    if (compareDivEl) { compareDivEl.remove(); compareDivEl = null; }
+    if (comparePanelEl) { comparePanelEl.remove(); comparePanelEl = null; }
+    CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
 }
 
 function switchBasemap(newKey) {
