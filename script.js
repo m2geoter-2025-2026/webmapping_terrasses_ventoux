@@ -833,33 +833,36 @@ let compareDivX = 0.5;
 let compareDivEl = null;
 let cmpLayerSides = Object.fromEntries(CMP_DATA_PANES.map(d => [d.key, 'both']));
 
+function _setClip(el, side, nw, se, clipX) {
+    if (!el) return;
+    if (side === 'left') {
+        el.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
+        el.style.clipPath = `polygon(${nw.x}px ${nw.y}px,${clipX}px ${nw.y}px,${clipX}px ${se.y}px,${nw.x}px ${se.y}px)`;
+    } else if (side === 'right') {
+        el.style.clip = `rect(${nw.y}px,${se.x}px,${se.y}px,${clipX}px)`;
+        el.style.clipPath = `polygon(${clipX}px ${nw.y}px,${se.x}px ${nw.y}px,${se.x}px ${se.y}px,${clipX}px ${se.y}px)`;
+    } else {
+        el.style.clip = '';
+        el.style.clipPath = '';
+    }
+}
+
 function _applyCompareClip() {
+    if (!compareActive) return;
     const mapSize = map.getSize();
     const nw = map.containerPointToLayerPoint([0, 0]);
     const se = map.containerPointToLayerPoint(mapSize);
     const clipX = nw.x + Math.round(mapSize.x * compareDivX);
-    const cmpPane = map.getPane('pane-compare');
-    if (cmpPane) cmpPane.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
+    _setClip(map.getPane('pane-compare'), 'left', nw, se, clipX);
     CMP_DATA_PANES.forEach(({ key, pane: paneName }) => {
-        const pane = map.getPane(paneName);
-        if (!pane) return;
-        const side = cmpLayerSides[key];
-        if (side === 'left') {
-            pane.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
-        } else if (side === 'right') {
-            pane.style.clip = `rect(${nw.y}px,${se.x}px,${se.y}px,${clipX}px)`;
-        } else {
-            pane.style.clip = '';
-        }
+        _setClip(map.getPane(paneName), cmpLayerSides[key], nw, se, clipX);
     });
 }
 
 function _clearAllClips() {
-    const cmpPane = map.getPane('pane-compare');
-    if (cmpPane) cmpPane.style.clip = '';
-    CMP_DATA_PANES.forEach(({ pane: paneName }) => {
-        const p = map.getPane(paneName);
-        if (p) p.style.clip = '';
+    ['pane-compare', ...CMP_DATA_PANES.map(d => d.pane)].forEach(name => {
+        const p = map.getPane(name);
+        if (p) { p.style.clip = ''; p.style.clipPath = ''; }
     });
 }
 
@@ -942,7 +945,7 @@ function _buildCompareSidebarContent() {
                 const row = panel.querySelector(`tr[data-layer-row="${layerKey}"]`);
                 if (row) row.classList.add('cmp-row-inactive');
             }
-            cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : 'right';
+            cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : r ? 'right' : 'both';
             _applyCompareClip();
         });
     });
