@@ -2067,7 +2067,8 @@ input:checked + .slider:before { transform: translateX(16px); }
 .cmp-td-check { text-align: center; }
 .cmp-td-check input[type="radio"], .cmp-td-check input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent-color); }
 .cmp-section-row td { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: #6b8c7a; padding: 8px 4px 3px; border-bottom: none; background: none; }
-.cmp-row-inactive td { opacity: 0.4; }
+.cmp-row-inactive td { opacity: 0.45; }
+.cmp-row-inactive .cmp-td-name::after { content: ' (inactif)'; font-size: 10px; color: #9ab; }
 
 .floating-legend { background: rgba(10,24,15,0.82); backdrop-filter: blur(10px); border: 1px solid rgba(78,200,120,0.2); border-radius: var(--radius-md); padding: 8px 12px; min-width: 130px; pointer-events: auto; margin-bottom: 32px !important; }
 .floating-legend-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-light); margin-bottom: 6px; }

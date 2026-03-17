@@ -878,10 +878,10 @@ function _buildCompareSidebarContent() {
         const active = chk && chk.checked;
         const isLeft  = cmpLayerSides[key] !== 'right';
         const isRight = cmpLayerSides[key] !== 'left';
-        return `<tr${active ? '' : ' class="cmp-row-inactive"'}>
+        return `<tr${active ? '' : ' class="cmp-row-inactive"'} data-layer-row="${key}">
             <td class="cmp-td-name">${label}</td>
-            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="left"${isLeft ? ' checked' : ''}${active ? '' : ' disabled'}></td>
-            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="right"${isRight ? ' checked' : ''}${active ? '' : ' disabled'}></td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="left"${isLeft && active ? ' checked' : ''}></td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="right"${isRight && active ? ' checked' : ''}></td>
         </tr>`;
     }).join('');
     panel.innerHTML = `
@@ -923,9 +923,25 @@ function _buildCompareSidebarContent() {
     panel.querySelectorAll('.cmp-layer-chk').forEach(chk => {
         chk.addEventListener('change', () => {
             const layerKey = chk.dataset.layer;
+            const entry = CMP_DATA_PANES.find(d => d.key === layerKey);
+            const mainChk = entry ? document.getElementById(entry.checkId) : null;
             const leftChk  = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
             const rightChk = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="right"]`);
             const l = leftChk?.checked, r = rightChk?.checked;
+            // Activate main layer if it was inactive and at least one side is now checked
+            if ((l || r) && mainChk && !mainChk.checked) {
+                mainChk.checked = true;
+                mainChk.dispatchEvent(new Event('change'));
+                const row = panel.querySelector(`tr[data-layer-row="${layerKey}"]`);
+                if (row) row.classList.remove('cmp-row-inactive');
+            }
+            // Deactivate if both sides unchecked
+            if (!l && !r && mainChk && mainChk.checked) {
+                mainChk.checked = false;
+                mainChk.dispatchEvent(new Event('change'));
+                const row = panel.querySelector(`tr[data-layer-row="${layerKey}"]`);
+                if (row) row.classList.add('cmp-row-inactive');
+            }
             cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : 'right';
             _applyCompareClip();
         });
