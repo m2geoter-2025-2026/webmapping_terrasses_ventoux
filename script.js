@@ -133,8 +133,6 @@ const Toolbar = L.Control.extend({
             '<button id="tool-locate"     class="tool-btn" title="Ma position GPS (L)"><i class="fas fa-location-dot"></i><span class="tool-label">Ma position</span></button>' +
             '<button id="tool-fullscreen" class="tool-btn" title="Plein écran (F)"><i class="fas fa-expand"></i><span class="tool-label">Plein écran</span></button>' +
             '<button id="tool-export"     class="tool-btn" title="Capture PNG (C)"><i class="fas fa-camera"></i><span class="tool-label">Capture</span></button>' +
-            '<div class="toolbar-sep"></div>' +
-            '<button id="tool-compare"    class="tool-btn" title="Comparer les fonds (B)"><i class="fas fa-columns"></i><span class="tool-label">Comparer</span></button>' +
             '<button id="tool-geojson"    class="tool-btn" title="Exporter les terrasses visibles (G)"><i class="fas fa-file-export"></i><span class="tool-label">Export Terrasses</span></button>';
         return bar;
     }
@@ -318,7 +316,7 @@ function initElevationChart() {
         data: {
             labels: [],
             datasets: [{
-                label: 'Altitude relative (m)',
+                label: 'Altitude (m)',
                 data: [],
                 borderColor: '#52b788',
                 backgroundColor: 'rgba(30, 107, 69, 0.12)',
@@ -338,7 +336,7 @@ function initElevationChart() {
                     mode: 'index',
                     intersect: false,
                     callbacks: {
-                        label: (ctx) => `Altitude relative: ${ctx.raw >= 0 ? '+' : ''}${ctx.raw.toFixed(1)} m`,
+                        label: (ctx) => `Altitude: ${ctx.raw.toFixed(0)} m`,
                         title: (ctx) => `Distance: ${ctx[0].label} km`
                     }
                 }
@@ -352,7 +350,7 @@ function initElevationChart() {
                 },
                 y: {
                     display: true,
-                    title: { display: true, text: 'Altitude relative (m)', font: { size: 10 }, color: '#94a3b8' },
+                    title: { display: true, text: 'Altitude (m)', font: { size: 10 }, color: '#94a3b8' },
                     ticks: { color: '#94a3b8', font: { size: 9 } },
                     grid: { color: 'rgba(255,255,255,0.06)' }
                 }
@@ -375,8 +373,7 @@ async function updateElevationProfile(points) {
         const elevations = data.elevations;
         if (!elevations || elevations.length === 0) return;
         const rawValues = elevations.map(e => e.z);
-        const baseAlt = rawValues[0];
-        const values = rawValues.map(v => parseFloat((v - baseAlt).toFixed(2)));
+        const values = rawValues.map(v => parseFloat(v.toFixed(1)));
         const lineFeature = turf.lineString(points.map(p => [p.lng, p.lat]));
         const totalDistKm = turf.length(lineFeature, { units: 'kilometers' });
         const labels = elevations.map((_, i) =>
@@ -426,7 +423,6 @@ document.addEventListener('keydown', function (e) {
         const cb = document.getElementById('layer-ruptures');
         if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
     }
-    if (key === 'b') document.getElementById('tool-compare')?.click();
     if (key === 'g') document.getElementById('tool-geojson')?.click();
 });
 
@@ -722,9 +718,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 300);
     });
 
-    document.getElementById('tool-compare')?.addEventListener('click', function () {
-        if (compareActive) { disableCompare(); } else { enableCompare(); }
-    });
     document.getElementById('compare-toggle')?.addEventListener('change', function () {
         if (this.checked) { enableCompare(); } else { disableCompare(); }
     });
