@@ -1,0 +1,2578 @@
+﻿const map = L.map('map', {
+    zoomControl: true,
+    attributionControl: false,
+    minZoom: 9,
+    maxZoom: 19,
+    bounceAtZoomLimits: false,
+    zoomSnap: 0.25,
+    zoomDelta: 1,
+    wheelPxPerZoomLevel: 80,
+    wheelDebounceTime: 60
+}).setView([44.17, 5.28], 12);
+
+const LAYER_PANES = [
+    { id: 'pane-ombrage',      label: 'Ombrage',                                  z: 201 },
+    { id: 'pane-mnt',          label: 'Mod├¿le Num├®rique de Terrain',              z: 202 },
+    { id: 'pane-probabilites', label: 'Probabilit├® d\'occurrence des terrasses',  z: 203 },
+    { id: 'pane-communes',     label: 'Communes du PNR',                          z: 204 },
+    { id: 'pane-parcelles',    label: 'Parcellaire',                              z: 205 },
+    { id: 'pane-terrasses',    label: 'Terrasses',                                z: 206 },
+    { id: 'pane-ruptures',     label: 'Ruptures de pentes',                       z: 207 },
+    { id: 'pane-emprise',      label: 'Emprise PNR',                              z: 208 },
+];
+LAYER_PANES.forEach(({ id, z }) => {
+    const pane = map.createPane(id);
+    pane.style.zIndex = z;
+    pane.style.pointerEvents = 'none';
+});
+const comparePane = map.createPane('pane-compare');
+comparePane.style.zIndex = 200;
+comparePane.style.pointerEvents = 'none';
+map.getPane('pane-terrasses').style.pointerEvents = 'auto';
+
+(function initSplashProgress() {
+    const fill   = document.getElementById('splash-progress-fill');
+    const pct    = document.getElementById('splash-progress-pct');
+    const status = document.getElementById('splash-progress-status');
+    let _cur = 0;
+
+    function setProgress(p, msg) {
+        _cur = Math.max(_cur, Math.min(100, p));
+        if (fill)   fill.style.width = _cur + '%';
+        if (pct)    pct.textContent  = Math.round(_cur) + ' %';
+        if (status && msg) status.textContent = msg;
+    }
+
+    function hideSplash() {
+        setProgress(100, 'Pr├¬t !');
+        setTimeout(() => {
+            const s = document.getElementById('splash-screen');
+            if (s) {
+                s.classList.add('hidden');
+                setTimeout(() => {
+                    s.remove();
+                    if (typeof openModal === 'function') openModal();
+                }, 800);
+            }
+        }, 350);
+    }
+
+    setProgress(8, 'Initialisation de la carteÔÇª');
+
+    const t0 = Date.now();
+    function tick() {
+        const elapsed = Date.now() - t0;
+        const t = Math.min(1, elapsed / 2200);
+        const p = 8 + 67 * (1 - Math.pow(1 - t, 2.5));
+        setProgress(p);
+        if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    window.addEventListener('load', () => {
+        setProgress(92, 'FinalisationÔÇª');
+        setTimeout(hideSplash, 600);
+    });
+
+    setTimeout(hideSplash, 6000);
+
+    window._splashProgress = setProgress;
+})();
+
+const ScaleBar = L.Control.extend({
+    options: { position: 'bottomleft', maxWidth: 100 },
+    onAdd: function (map) {
+        this._container = L.DomUtil.create('div', 'gm-scale');
+        map.on('zoomend moveend', this._update, this);
+        this._update();
+        return this._container;
+    },
+    _update: function () {
+        const y = map.getSize().y / 2;
+        const maxMeters = map.distance(
+            map.containerPointToLatLng([0, y]),
+            map.containerPointToLatLng([this.options.maxWidth, y])
+        );
+        const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+        let m = nice[0];
+        for (const v of nice) { if (v <= maxMeters) m = v; else break; }
+        const w = Math.round(this.options.maxWidth * (m / maxMeters));
+        const label = m >= 1000 ? (m / 1000) + ' km' : m + ' m';
+        const ratio = Math.round(m / (w * 0.000264583));
+        const ratioStr = new Intl.NumberFormat('fr-FR').format(ratio);
+        this._container.innerHTML = '<span>' + label + '</span><div class="gm-scale-bar" style="width:' + w + 'px"></div><span class="gm-scale-ratio">1\u202F:\u202F' + ratioStr + '</span>';
+    }
+});
+new ScaleBar().addTo(map);
+
+const NorthArrow = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function () {
+        const c = L.DomUtil.create('div', 'gm-compass');
+        L.DomEvent.disableClickPropagation(c);
+        c.innerHTML = '<svg viewBox="0 0 40 60" width="30" height="45" style="filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.3));">' +
+            '<path d="M20 0 L40 40 L20 30 L0 40 Z" fill="#1e6b45" stroke="#ffffff" stroke-width="2"/>' +
+            '<text x="20" y="56" text-anchor="middle" font-size="16" font-weight="bold" fill="#1e6b45" font-family="sans-serif">N</text>' +
+            '</svg>';
+        return c;
+    }
+});
+new NorthArrow().addTo(map);
+
+const Toolbar = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+        const bar = L.DomUtil.create('div', 'map-toolbar');
+        L.DomEvent.disableClickPropagation(bar);
+        L.DomEvent.disableScrollPropagation(bar);
+        bar.innerHTML =
+            '<button id="tool-home"       class="tool-btn" title="Accueil \u2013 recentrer (H)"><i class="fas fa-home"></i><span class="tool-label">Accueil</span></button>' +
+            '<div class="toolbar-sep"></div>' +
+            '<button id="tool-distance"   class="tool-btn" title="Mesure de distance (D)"><i class="fas fa-ruler"></i><span class="tool-label">Distance</span></button>' +
+            '<button id="tool-area"       class="tool-btn" title="Mesure de surface (S)"><i class="fas fa-draw-polygon"></i><span class="tool-label">Surface</span></button>' +
+            '<button id="tool-coords"     class="tool-btn" title="Coordonn\u00e9es au clic (X)"><i class="fas fa-crosshairs"></i><span class="tool-label">Coordonn\u00e9es</span></button>' +
+            '<div class="toolbar-sep"></div>' +
+            '<button id="tool-locate"     class="tool-btn" title="Ma position GPS (L)"><i class="fas fa-location-dot"></i><span class="tool-label">Ma position</span></button>' +
+            '<button id="tool-fullscreen" class="tool-btn" title="Plein \u00e9cran (F)"><i class="fas fa-expand"></i><span class="tool-label">Plein \u00e9cran</span></button>' +
+            '<button id="tool-export"     class="tool-btn" title="Capture PNG (C)"><i class="fas fa-camera"></i><span class="tool-label">Capture</span></button>' +
+            '<button id="tool-geojson"    class="tool-btn" title="Exporter les terrasses visibles (G)"><i class="fas fa-file-export"></i><span class="tool-label">Export Terrasses</span></button>' +
+            '<button id="tool-print"      class="tool-btn" title="Impression cartographique A4 (P)"><i class="fas fa-print"></i><span class="tool-label">Imprimer</span></button>' +
+            '<div class="toolbar-sep toolbar-sep--bottom"></div>' +
+            '<button id="tool-hand"       class="tool-btn tool-btn--hand active" title="Navigation \u2013 d\u00e9placer la carte (\u00c9chap)"><i class="fas fa-hand"></i><span class="tool-label">Navigation</span></button>';
+        return bar;
+    }
+});
+new Toolbar().addTo(map);
+
+const ToolInfo = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd: function () {
+        this._div = L.DomUtil.create('div', 'tool-info');
+        this._div.style.display = 'none';
+        return this._div;
+    },
+    show: function (html) { this._div.innerHTML = html; this._div.style.display = 'block'; },
+    hide: function () { this._div.style.display = 'none'; this._div.innerHTML = ''; }
+});
+const toolInfo = new ToolInfo();
+toolInfo.addTo(map);
+
+const FloatingLegend = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd: function () {
+        this._div = L.DomUtil.create('div', 'floating-legend');
+        L.DomEvent.disableClickPropagation(this._div);
+        this._div.innerHTML = '<div class="floating-legend-title">L\u00e9gendes actives</div><div class="floating-legend-empty">Aucune couche active</div>';
+        return this._div;
+    },
+    update: function (items) {
+        if (!this._div) return;
+        let html = '<div class="floating-legend-title">L\u00e9gendes actives</div>';
+        if (items.length === 0) {
+            html += '<div class="floating-legend-empty">Aucune couche active</div>';
+        } else {
+            items.forEach(item => {
+                html += '<div class="floating-legend-item"><span class="floating-legend-sym" style="' + item.style + '"></span>' + item.label + '</div>';
+            });
+        }
+        this._div.innerHTML = html;
+    }
+});
+const floatingLegend = new FloatingLegend();
+floatingLegend.addTo(map);
+
+function updateFloatingLegend() {
+    const items = [];
+    const layerTerrasses = document.getElementById('layer-terrasses');
+    const layerRuptures = document.getElementById('layer-ruptures');
+    const layerCommunes = document.getElementById('layer-communes');
+    const layerParcelles = document.getElementById('layer-parcelles');
+    const layerProba = document.getElementById('layer-probabilites');
+    const layerMnt = document.getElementById('layer-mnt-ombrage');
+    const layerOmbrage = document.getElementById('layer-ombrage');
+    if (layerTerrasses?.checked) {
+        const c = document.getElementById('color-terrasses')?.value || '#e74c3c';
+        items.push({ style: 'background:' + c + '66;border:2px solid ' + c + ';border-radius:2px;', label: 'Terrasses' });
+    }
+    if (layerRuptures?.checked) {
+        const c = document.getElementById('color-ruptures')?.value || '#e67e22';
+        items.push({ style: 'height:0;border-bottom:3px solid ' + c + ';', label: 'Ruptures de pentes' });
+    }
+    if (layerProba?.checked) {
+        items.push({ style: 'background:linear-gradient(90deg,#ffffff,#508c32,#0a3c05);border-radius:2px;', label: 'Probabilit\u00e9 d\'occurrence' });
+    }
+    if (layerMnt?.checked) {
+        items.push({ style: 'background:linear-gradient(90deg,#285023,#c3d76e,#f5ebe1);border-radius:2px;', label: 'MNT' });
+    }
+    if (layerOmbrage?.checked) {
+        items.push({ style: 'background:linear-gradient(90deg,#333,#999,#eee);border-radius:2px;', label: 'Ombrage' });
+    }
+    if (layerCommunes?.checked) {
+        const c = document.getElementById('color-communes')?.value || '#fde047';
+        items.push({ style: 'height:0;border-bottom:2px dashed ' + c + ';', label: 'Communes' });
+    }
+    if (layerParcelles?.checked) {
+        const c = document.getElementById('color-parcelles')?.value || '#f1c40f';
+        items.push({ style: 'background:' + c + '26;border:2px solid ' + c + ';border-radius:2px;', label: 'Parcellaire' });
+    }
+    floatingLegend.update(items);
+}
+
+const mouseTooltip = L.DomUtil.create('div', 'mouse-tooltip');
+document.body.appendChild(mouseTooltip);
+
+map.on('mousemove', function (e) {
+    if (activeTool && (activeTool === 'distance' || activeTool === 'area' || activeTool === 'coords')) {
+        mouseTooltip.style.display = 'block';
+        mouseTooltip.style.left = (e.originalEvent.pageX + 15) + 'px';
+        mouseTooltip.style.top = (e.originalEvent.pageY + 15) + 'px';
+    } else {
+        mouseTooltip.style.display = 'none';
+    }
+    const coordsDisplay = document.getElementById('coords-display');
+    if (coordsDisplay) {
+        coordsDisplay.textContent = `Lat : ${e.latlng.lat.toFixed(5)}  |  Lon : ${e.latlng.lng.toFixed(5)}`;
+    }
+});
+map.on('mouseout', function () { mouseTooltip.style.display = 'none'; });
+
+function updateZoomDisplay() {
+    const zoomEl = document.getElementById('zoom-display');
+    if (zoomEl) zoomEl.textContent = `Zoom : ${map.getZoom().toFixed(1)}`;
+}
+map.on('zoomend', updateZoomDisplay);
+
+let activeTool = null;
+let measurePoints = [];
+let measureMarkers = [];
+let measureLine = null;
+let measurePolygon = null;
+let activeMeasure = false;
+let lastMeasureType = null;
+
+function downloadToFile(dataUrl, fileName) {
+    try {
+        const parts = dataUrl.split(';base64,');
+        const contentType = parts[0].split(':')[1];
+        const raw = window.atob(parts[1]);
+        const uInt8Array = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; ++i) uInt8Array[i] = raw.charCodeAt(i);
+        const blob = new Blob([uInt8Array], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 100);
+    } catch (err) {
+        console.error('[Export] Échec Blob:', err);
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
+
+function clearMeasure() {
+    measurePoints = [];
+    measureMarkers.forEach(m => map.removeLayer(m));
+    measureMarkers = [];
+    if (measureLine) { map.removeLayer(measureLine); measureLine = null; }
+    if (measurePolygon) { map.removeLayer(measurePolygon); measurePolygon = null; }
+    activeMeasure = false;
+    toolInfo.hide();
+    document.getElementById('elevation-profile-container')?.classList.remove('active');
+}
+
+function deactivateTool() {
+    if (activeTool) {
+        document.getElementById('tool-' + activeTool)?.classList.remove('active');
+        map.getContainer().style.cursor = '';
+        map.getContainer().classList.remove('cursor-distance', 'cursor-area', 'cursor-coords');
+        mouseTooltip.style.display = 'none';
+    }
+    map.off('click', onMeasureClick);
+    map.off('mousemove', onMeasureMove);
+    map.off('click', onCoordsClick);
+    activeTool = null;
+    document.getElementById('tool-hand')?.classList.add('active');
+}
+
+function setActiveTool(name) {
+    if (activeTool === name) { deactivateTool(); return; }
+    deactivateTool();
+    if (name === 'distance' || name === 'area') clearMeasure();
+    activeTool = name;
+    document.getElementById('tool-hand')?.classList.remove('active');
+    document.getElementById('tool-' + name)?.classList.add('active');
+    if (name === 'distance') map.getContainer().classList.add('cursor-distance');
+    else if (name === 'area') map.getContainer().classList.add('cursor-area');
+    else if (name === 'coords') map.getContainer().classList.add('cursor-coords');
+    else map.getContainer().style.cursor = 'crosshair';
+}
+
+let elevationChart = null;
+
+function initElevationChart() {
+    const ctx = document.getElementById('elevationChart').getContext('2d');
+    elevationChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Altitude (m)',
+                data: [],
+                borderColor: '#52b788',
+                backgroundColor: 'rgba(30, 107, 69, 0.12)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: (ctx) => `Altitude: ${ctx.raw.toFixed(0)} m`,
+                        title: (ctx) => `Distance: ${ctx[0].label} km`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    title: { display: true, text: 'Distance (km)', font: { size: 10 }, color: '#94a3b8' },
+                    ticks: { color: '#94a3b8', font: { size: 9 } },
+                    grid: { display: false }
+                },
+                y: {
+                    display: true,
+                    title: { display: true, text: 'Altitude (m)', font: { size: 10 }, color: '#94a3b8' },
+                    ticks: { color: '#94a3b8', font: { size: 9 } },
+                    grid: { color: 'rgba(255,255,255,0.06)' }
+                }
+            }
+        }
+    });
+}
+
+async function updateElevationProfile(points) {
+    if (points.length < 2) return;
+    const profileContainer = document.getElementById('elevation-profile-container');
+    profileContainer.classList.add('active');
+    const lons = points.map(p => p.lng.toFixed(6)).join('|');
+    const lats = points.map(p => p.lat.toFixed(6)).join('|');
+    const url = `https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevationLine.json?resource=ign_rge_alti_wld&sampling=50&lon=${lons}&lat=${lats}&delimiter=|`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Erreur API Altimétrie: ' + response.status);
+        const data = await response.json();
+        const elevations = data.elevations;
+        if (!elevations || elevations.length === 0) return;
+        const rawValues = elevations.map(e => e.z);
+        const values = rawValues.map(v => parseFloat(v.toFixed(1)));
+        const lineFeature = turf.lineString(points.map(p => [p.lng, p.lat]));
+        const totalDistKm = turf.length(lineFeature, { units: 'kilometers' });
+        const labels = elevations.map((_, i) =>
+            (totalDistKm * i / Math.max(1, elevations.length - 1)).toFixed(2)
+        );
+        if (!elevationChart) initElevationChart();
+        elevationChart.data.labels = labels;
+        elevationChart.data.datasets[0].data = values;
+        elevationChart.update();
+    } catch (err) {
+        console.error('Erreur profil alti:', err);
+    }
+}
+
+document.getElementById('export-profile-png')?.addEventListener('click', () => {
+    const canvas = document.getElementById('elevationChart');
+    if (!canvas) return;
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.fillStyle = '#ffffff';
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tempCtx.drawImage(canvas, 0, 0);
+    const fileName = 'Profil_Altimetrique_Ventoux_' + new Date().toISOString().slice(0, 10) + '.png';
+    downloadToFile(tempCanvas.toDataURL('image/png'), fileName);
+    toolInfo.show('<i class="fas fa-check" style="color:#27ae60"></i> Image envoyée vers votre dossier <b>Téléchargements</b> !');
+    setTimeout(() => toolInfo.hide(), 5000);
+});
+
+document.getElementById('close-elevation')?.addEventListener('click', () => {
+    document.getElementById('elevation-profile-container').classList.remove('active');
+});
+
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && activeTool) { deactivateTool(); return; }
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    const key = e.key.toLowerCase();
+    if (key === 'h') document.getElementById('tool-home')?.click();
+    if (key === 'd') document.getElementById('tool-distance')?.click();
+    if (key === 's') document.getElementById('tool-area')?.click();
+    if (key === 'x') document.getElementById('tool-coords')?.click();
+    if (key === 'c' && !e.ctrlKey) document.getElementById('tool-export')?.click();
+    if (key === 'l') document.getElementById('tool-locate')?.click();
+    if (key === 'f') document.getElementById('tool-fullscreen')?.click();
+    if (key === 'r') {
+        const cb = document.getElementById('layer-ruptures');
+        if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
+    }
+    if (key === 'g') document.getElementById('tool-geojson')?.click();
+    if (key === 'p' && !e.ctrlKey) document.getElementById('tool-print')?.click();
+    if (key === 'n') document.getElementById('tool-dark')?.click();
+    if (key === 'escape' || e.key === 'Escape') document.getElementById('tool-hand')?.click();
+});
+
+// ── Bouton navigation (main) ──────────────────────────────────
+document.getElementById('tool-hand')?.addEventListener('click', function () {
+    deactivateTool();
+    clearMeasure();
+    toolInfo.hide();
+});
+
+// ── Mode sombre ───────────────────────────────────────────────
+(function initDarkMode() {
+    const saved = localStorage.getItem('pnr-theme');
+    if (saved === 'dark') applyDarkMode(true, false);
+})();
+
+function applyDarkMode(enable, save = true) {
+    const html = document.documentElement;
+    const btn  = document.getElementById('tool-dark');
+    if (enable) {
+        html.setAttribute('data-theme', 'dark');
+        if (btn) { btn.querySelector('i').className = 'fas fa-sun'; btn.querySelector('.tool-label').textContent = 'Jour'; btn.title = 'Mode jour (N)'; }
+    } else {
+        html.removeAttribute('data-theme');
+        if (btn) { btn.querySelector('i').className = 'fas fa-moon'; btn.querySelector('.tool-label').textContent = 'Nuit'; btn.title = 'Mode sombre (N)'; }
+    }
+    if (save) localStorage.setItem('pnr-theme', enable ? 'dark' : 'light');
+}
+
+document.getElementById('tool-dark')?.addEventListener('click', function () {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    applyDarkMode(!isDark);
+});
+
+function formatDistance(meters) {
+    return meters >= 1000 ? (meters / 1000).toFixed(2) + ' km' : Math.round(meters) + ' m';
+}
+
+function getTotalDistance() {
+    let total = 0;
+    for (let i = 1; i < measurePoints.length; i++) total += map.distance(measurePoints[i - 1], measurePoints[i]);
+    return total;
+}
+
+function getArea(pts) {
+    if (pts.length < 3) return 0;
+    let area = 0;
+    const projPts = pts.map(p => L.Projection.SphericalMercator.project(p));
+    for (let i = 0; i < projPts.length; i++) {
+        const j = (i + 1) % projPts.length;
+        area += projPts[i].x * projPts[j].y;
+        area -= projPts[j].x * projPts[i].y;
+    }
+    return Math.abs(area / 2);
+}
+
+function formatArea(sqm) {
+    if (sqm >= 1e6) return (sqm / 1e6).toFixed(2) + ' km²';
+    if (sqm >= 1e4) return (sqm / 1e4).toFixed(2) + ' ha';
+    return Math.round(sqm) + ' m²';
+}
+
+function exportMeasureCSV() {
+    if (measurePoints.length === 0) return;
+    let lines = ['Point,Latitude,Longitude,Distance cumulée (m)'];
+    let cum = 0;
+    measurePoints.forEach((p, i) => {
+        if (i > 0) cum += map.distance(measurePoints[i - 1], measurePoints[i]);
+        lines.push(i + 1 + ',' + p.lat.toFixed(6) + ',' + p.lng.toFixed(6) + ',' + cum.toFixed(1));
+    });
+    if (lastMeasureType === 'area' && measurePoints.length >= 3) {
+        lines.push('');
+        lines.push('Surface (m²),' + getArea(measurePoints).toFixed(1));
+        lines.push('Surface (ha),' + (getArea(measurePoints) / 10000).toFixed(4));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'mesure_' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function finishMeasure() {
+    activeMeasure = false;
+    map.off('mousemove', onMeasureMove);
+    mouseTooltip.style.display = 'none';
+    let resultHTML = '';
+    if (activeTool === 'distance') {
+        resultHTML = '<i class="fas fa-ruler"></i> <b>' + formatDistance(getTotalDistance()) + '</b>';
+    } else {
+        resultHTML = '<i class="fas fa-draw-polygon"></i> <b>' + formatArea(getArea(measurePoints)) + '</b>';
+    }
+    resultHTML += '<br><a href="#" onclick="clearMeasure(); return false;" style="color:#EA4335; font-size:11px; text-decoration:none;"><i class="fas fa-trash"></i> Effacer</a>';
+    resultHTML += ' <a href="#" onclick="exportMeasureCSV(); return false;" style="color:#1e6b45; font-size:11px; text-decoration:none; margin-left:6px;"><i class="fas fa-download"></i> CSV</a>';
+    toolInfo.show(resultHTML);
+    lastMeasureType = activeTool;
+    activeTool = null;
+    document.querySelector('.tool-btn.active')?.classList.remove('active');
+    map.getContainer().style.cursor = '';
+    map.off('click', onMeasureClick);
+}
+
+function onMeasureClick(e) {
+    if (!activeMeasure) { clearMeasure(); activeMeasure = true; }
+    if (measurePoints.length > 0) {
+        const lastPt = measurePoints[measurePoints.length - 1];
+        if (map.latLngToContainerPoint(lastPt).distanceTo(map.latLngToContainerPoint(e.latlng)) < 15) {
+            finishMeasure();
+            return;
+        }
+    }
+    measurePoints.push(e.latlng);
+    const dot = L.circleMarker(e.latlng, {
+        radius: 4, color: '#fff', fillColor: '#EA4335', fillOpacity: 1, weight: 2
+    }).addTo(map);
+    dot.on('click', function (ev) { L.DomEvent.stopPropagation(ev); finishMeasure(); });
+    measureMarkers.push(dot);
+    updateMeasureDrawing();
+    if (activeTool === 'distance' && measurePoints.length >= 2) updateElevationProfile(measurePoints);
+}
+
+function onMeasureMove(e) {
+    if (measurePoints.length === 0) {
+        mouseTooltip.innerHTML = 'Cliquez pour commencer<br><span class="tooltip-hint">Échap pour annuler</span>';
+        return;
+    }
+    const pts = [...measurePoints, e.latlng];
+    if (measureLine) map.removeLayer(measureLine);
+    if (activeTool === 'distance') {
+        measureLine = L.polyline(pts, { color: '#EA4335', weight: 3, dashArray: '5,5' }).addTo(map);
+        let dist = getTotalDistance() + map.distance(measurePoints[measurePoints.length - 1], e.latlng);
+        mouseTooltip.innerHTML = '<b>' + formatDistance(dist) + '</b><br><span class="tooltip-hint">Clic: ajouter, Dbl-clic: terminer</span>';
+    } else if (activeTool === 'area') {
+        if (pts.length >= 3) {
+            if (measurePolygon) map.removeLayer(measurePolygon);
+            measurePolygon = L.polygon(pts, { color: '#EA4335', weight: 3, dashArray: '5,5', fillColor: '#EA4335', fillOpacity: 0.2 }).addTo(map);
+            mouseTooltip.innerHTML = '<b>' + formatArea(getArea(pts)) + '</b><br><span class="tooltip-hint">Clic: ajouter, Dbl-clic: terminer</span>';
+        } else {
+            measureLine = L.polyline(pts, { color: '#EA4335', weight: 3, dashArray: '5,5' }).addTo(map);
+            mouseTooltip.innerHTML = '<span class="tooltip-hint">Ajoutez au moins 3 points</span>';
+        }
+    }
+}
+
+function updateMeasureDrawing() {
+    if (activeTool === 'distance') {
+        if (measureLine) map.removeLayer(measureLine);
+        measureLine = L.polyline(measurePoints, { color: '#EA4335', weight: 3 }).addTo(map);
+        toolInfo.show('<i class="fas fa-ruler"></i> ' + formatDistance(getTotalDistance()));
+    } else if (activeTool === 'area') {
+        if (measurePoints.length >= 3) {
+            if (measurePolygon) map.removeLayer(measurePolygon);
+            measurePolygon = L.polygon(measurePoints, { color: '#EA4335', weight: 3, fillColor: '#EA4335', fillOpacity: 0.2 }).addTo(map);
+            toolInfo.show('<i class="fas fa-draw-polygon"></i> ' + formatArea(getArea(measurePoints)));
+        }
+    }
+}
+
+function onCoordsClick(e) {
+    const lat = e.latlng.lat.toFixed(5);
+    const lng = e.latlng.lng.toFixed(5);
+    L.popup({ closeButton: false, className: 'custom-popup' })
+        .setLatLng(e.latlng)
+        .setContent('<div style="text-align:center"><b style="color:#2c3e50">' + lat + ', ' + lng + '</b><br><i class="fas fa-check" style="color:#27ae60; margin-top:4px"></i> Copié !</div>')
+        .openOn(map);
+    navigator.clipboard?.writeText(lat + ', ' + lng);
+    setTimeout(() => map.closePopup(), 2000);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('input[name="basemap"]').forEach(radio => {
+        radio.addEventListener('change', e => switchBasemap(e.target.value));
+    });
+
+    let miniMap = null;
+    if (typeof L.Control.MiniMap !== 'undefined') {
+        const miniTile = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { minZoom: 0, maxZoom: 13, attribution: '' });
+        miniMap = new L.Control.MiniMap(miniTile, {
+            toggleDisplay: true,
+            position: 'bottomright',
+            minimized: false,
+            width: 140,
+            height: 110,
+            zoomLevelOffset: -5,
+            mapOptions: { zoomControl: false, attributionControl: false }
+        }).addTo(map);
+    }
+    window._miniMap = miniMap;
+
+    const communeSearchInput = document.getElementById('commune-search');
+    const communeSearchResults = document.getElementById('commune-search-results');
+    if (communeSearchInput && communeSearchResults) {
+        communeSearchInput.addEventListener('input', function () {
+            const q = this.value.trim().toLowerCase();
+            communeSearchResults.innerHTML = '';
+            if (!q || !window._communeIndex) return;
+            const matches = window._communeIndex.filter(c => c.name.toLowerCase().includes(q)).slice(0, 8);
+            matches.forEach(commune => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+                item.textContent = commune.name;
+                item.addEventListener('click', () => {
+                    map.flyToBounds(commune.bounds, { duration: 0.8, padding: [30, 30] });
+                    communeSearchInput.value = commune.name;
+                    communeSearchResults.innerHTML = '';
+                });
+                communeSearchResults.appendChild(item);
+            });
+        });
+        document.addEventListener('click', function (e) {
+            if (!communeSearchInput.contains(e.target) && !communeSearchResults.contains(e.target)) {
+                communeSearchResults.innerHTML = '';
+            }
+        });
+    }
+
+    document.getElementById('tool-home')?.addEventListener('click', function () {
+        if (emprisePNR.getBounds().isValid()) {
+            map.flyToBounds(emprisePNR.getBounds(), { duration: 1 });
+            toolInfo.show('<i class="fas fa-home"></i> Carte recentrée !');
+            setTimeout(() => toolInfo.hide(), 2000);
+        }
+    });
+
+    document.getElementById('tool-distance')?.addEventListener('click', function () {
+        setActiveTool('distance');
+        if (activeTool === 'distance') {
+            map.on('click', onMeasureClick);
+            map.on('mousemove', onMeasureMove);
+            map.on('dblclick', finishMeasure);
+            toolInfo.show('<i class="fas fa-ruler"></i> Mesure de distance...');
+        }
+    });
+
+    document.getElementById('tool-area')?.addEventListener('click', function () {
+        setActiveTool('area');
+        if (activeTool === 'area') {
+            map.on('click', onMeasureClick);
+            map.on('mousemove', onMeasureMove);
+            map.on('dblclick', finishMeasure);
+            toolInfo.show('<i class="fas fa-draw-polygon"></i> Mesure de surface...');
+        }
+    });
+
+    document.getElementById('tool-coords')?.addEventListener('click', function () {
+        setActiveTool('coords');
+        if (activeTool === 'coords') {
+            map.on('click', onCoordsClick);
+            mouseTooltip.innerHTML = 'Cliquez pour copier les coordonnées';
+            toolInfo.show('<i class="fas fa-crosshairs"></i> Mode coordonnées actif');
+        }
+    });
+
+    document.getElementById('tool-locate')?.addEventListener('click', function () {
+        deactivateTool();
+        const btn = this;
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Localisation...</span>';
+        map.locate({ setView: true, maxZoom: 16 });
+        map.once('locationfound', function (e) {
+            btn.innerHTML = originalHTML;
+            L.circleMarker(e.latlng, { radius: 8, color: '#4285F4', fillColor: '#4285F4', fillOpacity: 0.6, weight: 2 })
+                .addTo(map).bindPopup('Vous êtes ici').openPopup();
+            L.circle(e.latlng, { radius: e.accuracy / 2, color: '#4285F4', fillOpacity: 0.08, weight: 1 }).addTo(map);
+        });
+        map.once('locationerror', function () {
+            btn.innerHTML = originalHTML;
+            toolInfo.show('<i class="fas fa-exclamation-triangle" style="color:#e74c3c"></i> Impossible de vous localiser');
+            setTimeout(function () { toolInfo.hide(); }, 3000);
+        });
+    });
+
+    document.getElementById('tool-fullscreen')?.addEventListener('click', function () {
+        deactivateTool();
+        const span = this.querySelector('span');
+        const icon = this.querySelector('i');
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen();
+            if (icon) icon.className = 'fas fa-compress';
+            if (span) span.textContent = 'Réduire';
+            this.title = 'Quitter le plein écran';
+        } else {
+            document.exitFullscreen();
+            if (icon) icon.className = 'fas fa-expand';
+            if (span) span.textContent = 'Plein Écran';
+            this.title = 'Plein écran';
+        }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        const btn = document.getElementById('tool-fullscreen');
+        if (!document.fullscreenElement && btn) {
+            const span = btn.querySelector('span');
+            const icon = btn.querySelector('i');
+            if (icon) icon.className = 'fas fa-expand';
+            if (span) span.textContent = 'Plein Écran';
+            btn.title = 'Plein écran';
+        }
+    });
+
+    document.getElementById('tool-export')?.addEventListener('click', function () {
+        deactivateTool();
+        const btn = this;
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Capture...</span>';
+        toolInfo.show('<i class="fas fa-camera"></i> Génération de l\'image...');
+        document.querySelectorAll('.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom').forEach(el => el.style.opacity = '0');
+        setTimeout(() => {
+            const mapEl = document.getElementById('map');
+            html2canvas(mapEl, { useCORS: true, allowTaint: true }).then(function (canvas) {
+                document.querySelectorAll('.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom').forEach(el => el.style.opacity = '1');
+                const fileName = 'Carte_PNR_du-Mont-Ventoux_' + new Date().toISOString().slice(0, 10) + '.png';
+                downloadToFile(canvas.toDataURL(), fileName);
+                btn.innerHTML = originalHTML;
+                toolInfo.show('<i class="fas fa-check" style="color:#27ae60"></i> Carte envoyée vers votre dossier <b>Téléchargements</b> !');
+                setTimeout(function () { toolInfo.hide(); }, 5000);
+            }).catch(function () {
+                document.querySelectorAll('.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom').forEach(el => el.style.opacity = '1');
+                btn.innerHTML = originalHTML;
+                toolInfo.show('<i class="fas fa-exclamation-triangle" style="color:#e74c3c"></i> Erreur lors de l\'export');
+                setTimeout(function () { toolInfo.hide(); }, 3000);
+            });
+        }, 300);
+    });
+
+    document.getElementById('compare-toggle')?.addEventListener('change', function () {
+        if (this.checked) { enableCompare(); } else { disableCompare(); }
+    });
+
+    document.getElementById('tool-geojson')?.addEventListener('click', function () {
+        const features = [];
+        terrassesLayer._geomLayer.eachLayer(l => { if (l.feature) features.push(l.feature); });
+        if (features.length === 0) {
+            toolInfo.show('<i class="fas fa-exclamation-triangle" style="color:#e67e22"></i> Activez la couche Terrasses et zoomez au niveau \u2265 14');
+            setTimeout(() => toolInfo.hide(), 3500);
+            return;
+        }
+        const geojson = { type: 'FeatureCollection', features };
+        const blob = new Blob([JSON.stringify(geojson)], { type: 'application/geo+json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'terrasses_' + new Date().toISOString().slice(0, 10) + '.geojson';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        toolInfo.show('<i class="fas fa-check" style="color:#27ae60"></i> ' + features.length + ' terrasse(s) export\u00e9e(s)');
+        setTimeout(() => toolInfo.hide(), 3000);
+    });
+});
+
+// ── Outil impression ──────────────────────────────────────────
+document.getElementById('tool-print')?.addEventListener('click', function () {
+    deactivateTool();
+    document.getElementById('print-modal')?.classList.add('active');
+});
+document.getElementById('print-modal-close')?.addEventListener('click', () => {
+    document.getElementById('print-modal')?.classList.remove('active');
+});
+document.getElementById('print-modal')?.addEventListener('click', function (e) {
+    if (e.target === this) this.classList.remove('active');
+});
+
+const PRINT_THEMES = {
+    green:     { bg1:[23,92,56],   bg2:[30,107,69],  line:[17,77,46],   sub:[140,205,170], ftBg:[245,251,247], ftLine:[30,107,69],  cred:[30,107,69]  },
+    blue:      { bg1:[13,71,161],  bg2:[21,101,192], line:[10,55,130],  sub:[160,195,240], ftBg:[245,247,254], ftLine:[21,101,192], cred:[21,101,192] },
+    slate:     { bg1:[33,47,54],   bg2:[55,71,79],   line:[21,30,35],   sub:[170,185,190], ftBg:[246,247,248], ftLine:[55,71,79],   cred:[55,71,79]   },
+    terracotta:{ bg1:[168,46,9],   bg2:[191,54,12],  line:[130,36,7],   sub:[240,180,155], ftBg:[255,249,247], ftLine:[191,54,12],  cred:[191,54,12]  },
+};
+
+document.getElementById('print-launch')?.addEventListener('click', async function () {
+    if (!window.jspdf) {
+        toolInfo.show('<i class="fas fa-exclamation-triangle" style="color:#e74c3c"></i> jsPDF non charg\u00e9');
+        setTimeout(() => toolInfo.hide(), 3000);
+        return;
+    }
+    const btn  = this;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> G\u00e9n\u00e9ration\u2026';
+    btn.disabled  = true;
+
+    const title   = (document.getElementById('print-title')?.value  || 'Carte PNR du Mont-Ventoux').trim();
+    const orient  = document.querySelector('input[name="print-orient"]:checked')?.value || 'portrait';
+    const isLand  = orient === 'landscape';
+    const showLeg    = document.getElementById('print-opt-legend')?.checked  !== false;
+    const showScale  = document.getElementById('print-opt-scale')?.checked   !== false;
+    const showNorth  = document.getElementById('print-opt-north')?.checked   !== false;
+    const showDate   = document.getElementById('print-opt-date')?.checked    !== false;
+    const showCoords = document.getElementById('print-opt-coords')?.checked  !== false;
+    const showSources= document.getElementById('print-opt-sources')?.checked !== false;
+    const showFrame  = document.getElementById('print-opt-frame')?.checked   === true;
+    const T = PRINT_THEMES.green;
+
+    /* Éléments à ignorer complètement dans html2canvas */
+    const IGNORE_CLASSES = new Set([
+        'sidebar', 'sidebar-toggle', 'map-toolbar', 'floating-legend',
+        'comparator-divider', 'coords-bar', 'mouse-tooltip', 'elevation-panel'
+    ]);
+    const IGNORE_IDS = new Set(['sidebar-toggle']);
+
+    /* Masquer aussi via visibility pour les contrôles Leaflet (hors ignoreElements) */
+    const ctrl = document.querySelectorAll(
+        '.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom'
+    );
+    ctrl.forEach(el => { el.dataset._printVis = el.style.visibility; el.style.visibility = 'hidden'; });
+
+    /* Wait for any in-flight tiles to finish loading */
+    await new Promise(resolve => {
+        if (!map._tilesToLoad || map._tilesToLoad === 0) { resolve(); return; }
+        const done = () => { map.off('load', done); resolve(); };
+        map.on('load', done);
+        setTimeout(resolve, 4000); // hard cap
+    });
+    await new Promise(r => setTimeout(r, 200)); // settle
+
+    /* Recalculer le centre visible (la sidebar recouvre la gauche de la carte) */
+    const sidebarEl   = document.querySelector('.sidebar');
+    const sidebarOpen = sidebarEl && !sidebarEl.classList.contains('collapsed');
+    const sidebarRight = sidebarOpen
+        ? (parseFloat(getComputedStyle(sidebarEl).left) || 20) + sidebarEl.offsetWidth
+        : 0;
+    const mapSize = map.getSize();
+    const visCenterPx = L.point(
+        sidebarRight + (mapSize.x - sidebarRight) / 2,
+        mapSize.y / 2
+    );
+    const visCenter = map.containerPointToLatLng(visCenterPx);
+
+    map.setView(visCenter, map.getZoom(), { animate: false, reset: true });
+    await new Promise(r => setTimeout(r, 350));
+
+    try {
+        const mapCanvas = await html2canvas(document.getElementById('map'), {
+            useCORS: true, allowTaint: false, scale: 2,
+            backgroundColor: '#ffffff', logging: false,
+            imageTimeout: 8000,
+            scrollX: 0, scrollY: 0,
+            ignoreElements: el =>
+                IGNORE_IDS.has(el.id) ||
+                [...el.classList].some(c => IGNORE_CLASSES.has(c))
+        });
+        ctrl.forEach(el => { el.style.visibility = el.dataset._printVis || ''; delete el.dataset._printVis; });
+
+        /* ── Recadrage sans déformation (cover crop) ── */
+        const { jsPDF } = window.jspdf;
+        const W   = isLand ? 297 : 210;
+        const H   = isLand ? 210 : 297;
+        const HDR = 16;
+        const FOOT = showLeg ? 26 : 10;
+        const mapAreaW = W;
+        const mapAreaH = H - HDR - FOOT;
+        const mapAreaAspect = mapAreaW / mapAreaH;
+        const canvasAspect  = mapCanvas.width / mapCanvas.height;
+
+        let srcX = 0, srcY = 0, srcW = mapCanvas.width, srcH = mapCanvas.height;
+        if (canvasAspect > mapAreaAspect) {
+            srcW = Math.round(mapCanvas.height * mapAreaAspect);
+            srcX = Math.round((mapCanvas.width - srcW) / 2);
+        } else {
+            srcH = Math.round(mapCanvas.width / mapAreaAspect);
+            srcY = Math.round((mapCanvas.height - srcH) / 2);
+        }
+        const crop = document.createElement('canvas');
+        crop.width = srcW; crop.height = srcH;
+        crop.getContext('2d').drawImage(mapCanvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+        const imgData = crop.toDataURL('image/jpeg', 0.95);
+
+        const doc = new jsPDF({ orientation: orient, unit: 'mm', format: 'a4' });
+
+        /* ── HEADER ─────────────────────────────────────────── */
+        doc.setFillColor(...T.bg1);
+        doc.rect(0, 0, W * 0.45, HDR, 'F');
+        doc.setFillColor(...T.bg2);
+        doc.rect(W * 0.45, 0, W * 0.55, HDR, 'F');
+        doc.setDrawColor(...T.line);
+        doc.setLineWidth(0.7);
+        doc.line(0, HDR, W, HDR);
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(isLand ? 13 : 12);
+        doc.text(title, 13, 8.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...T.sub);
+        doc.text('PNR du Mont-Ventoux  \u00b7  Terrasses en Pierres S\u00e8ches', 13, 14);
+        if (showDate) {
+            const dateStr = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
+            doc.setFontSize(7.5);
+            doc.setTextColor(...T.sub);
+            doc.text(dateStr, W - 12, 8.5, { align: 'right' });
+        }
+        doc.setFontSize(7);
+        doc.setTextColor(...T.sub);
+        doc.text('WGS 84  \u00b7  EPSG:4326', W - 12, 14, { align: 'right' });
+
+        /* ── IMAGE CARTE ─────────────────────────────────────── */
+        doc.addImage(imgData, 'JPEG', 0, HDR, W, mapAreaH, undefined, 'FAST');
+
+        /* ── ROSE DES VENTS ──────────────────────────────────── */
+        if (showNorth) {
+            const nX = W - 15;
+            const nY = HDR + 16;
+            const nR = 8.5;
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(180, 180, 180);
+            doc.setLineWidth(0.35);
+            doc.circle(nX, nY, nR + 1.2, 'FD');
+            doc.setFillColor(...T.bg2);
+            doc.setDrawColor(...T.bg2);
+            doc.setLineWidth(0.1);
+            doc.lines([[-nR * 0.35, nR], [nR * 0.70, 0]], nX, nY - nR, [1, 1], 'F', true);
+            doc.setFillColor(185, 192, 188);
+            doc.setDrawColor(185, 192, 188);
+            doc.lines([[nR * 0.35, -nR], [-nR * 0.70, 0]], nX, nY + nR, [1, 1], 'F', true);
+            doc.setFillColor(...T.bg2);
+            doc.circle(nX, nY, 1.4, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.5);
+            doc.setTextColor(...T.bg2);
+            doc.text('N', nX, nY - nR + 4.5, { align: 'center' });
+        }
+
+        /* ── BARRE D'ÉCHELLE ─────────────────────────────────── */
+        if (showScale) {
+            const { barMm, label: scaleLabel } = _buildPrintScale(orient);
+            const sbX   = 12;
+            const sbW   = parseFloat(barMm);
+            const sbH   = 3.5;
+            const sbY   = HDR + mapAreaH - 8;
+            const sbSeg = sbW / 3;
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(160, 160, 160);
+            doc.setLineWidth(0.25);
+            doc.roundedRect(sbX - 2.5, sbY - 7, sbW + 5, sbH + 9, 1.5, 1.5, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.5);
+            doc.setTextColor(20, 20, 20);
+            doc.text('0', sbX, sbY - 1.5);
+            doc.text(scaleLabel, sbX + sbW, sbY - 1.5, { align: 'right' });
+            doc.setLineWidth(0.1);
+            doc.setFillColor(33, 33, 33); doc.setDrawColor(33, 33, 33);
+            doc.rect(sbX, sbY, sbSeg, sbH, 'FD');
+            doc.setFillColor(255, 255, 255);
+            doc.rect(sbX + sbSeg, sbY, sbSeg, sbH, 'FD');
+            doc.setFillColor(33, 33, 33);
+            doc.rect(sbX + sbSeg * 2, sbY, sbSeg, sbH, 'FD');
+            doc.setDrawColor(33, 33, 33);
+            doc.setLineWidth(0.4);
+            doc.rect(sbX, sbY, sbW, sbH, 'D');
+        }
+
+        /* ── FOOTER ──────────────────────────────────────────── */
+        const ftY = H - FOOT;
+        doc.setFillColor(...T.ftBg);
+        doc.rect(0, ftY, W, FOOT, 'F');
+        doc.setDrawColor(...T.ftLine);
+        doc.setLineWidth(0.8);
+        doc.line(0, ftY, W, ftY);
+
+        /* ── LÉGENDE ─────────────────────────────────────────── */
+        if (showLeg) {
+            const legendItems = _buildPrintLegend();
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.5);
+            doc.setTextColor(...T.cred);
+            doc.text('L\u00c9GENDE', 12, ftY + 6.5);
+            doc.setDrawColor(...T.sub);
+            doc.setLineWidth(0.25);
+            doc.line(12, ftY + 8, W - 50, ftY + 8);
+
+            const lX0  = 12;
+            const lY0  = ftY + 13;
+            const rowH = 5;
+            const maxR = isLand ? 2 : 3;
+            const colW = isLand ? 68 : 58;
+
+            legendItems.forEach((item, i) => {
+                const col = Math.floor(i / maxR);
+                const row = i % maxR;
+                const ix  = lX0 + col * colW;
+                const iy  = lY0 + row * rowH;
+                const rgb = item.color ? _hexToRgb(item.color) : null;
+                doc.setLineWidth(0.3);
+                if (item.type === 'fill' && rgb) {
+                    doc.setFillColor(rgb.r, rgb.g, rgb.b); doc.setDrawColor(rgb.r, rgb.g, rgb.b);
+                    doc.setLineWidth(0.6); doc.rect(ix, iy - 2.8, 7.5, 4, 'FD');
+                } else if (item.type === 'line' && rgb) {
+                    doc.setDrawColor(rgb.r, rgb.g, rgb.b);
+                    doc.setLineWidth(1.5); doc.line(ix, iy - 0.5, ix + 7.5, iy - 0.5);
+                } else if (item.type === 'dash' && rgb) {
+                    doc.setDrawColor(rgb.r, rgb.g, rgb.b);
+                    doc.setLineWidth(1); doc.setLineDash([1.8, 1.5]);
+                    doc.line(ix, iy - 0.5, ix + 7.5, iy - 0.5); doc.setLineDash([]);
+                } else if (item.type === 'solid-line' && rgb) {
+                    doc.setDrawColor(rgb.r, rgb.g, rgb.b);
+                    doc.setLineWidth(1.5); doc.line(ix, iy - 0.5, ix + 7.5, iy - 0.5);
+                } else if (item.type === 'stroke' && rgb) {
+                    doc.setFillColor(rgb.r, rgb.g, rgb.b); doc.setDrawColor(rgb.r, rgb.g, rgb.b);
+                    doc.setLineWidth(0.6); doc.rect(ix, iy - 2.8, 7.5, 4, 'FD');
+                } else if (item.type === 'grad' && item.gradColors) {
+                    const sw = 7.5 / item.gradColors.length;
+                    item.gradColors.forEach((hex, k) => {
+                        const c = _hexToRgb(hex);
+                        doc.setFillColor(c.r, c.g, c.b);
+                        doc.rect(ix + k * sw, iy - 2.8, sw, 4, 'F');
+                    });
+                    doc.setDrawColor(100, 100, 100); doc.setLineWidth(0.3);
+                    doc.rect(ix, iy - 2.8, 7.5, 4, 'D');
+                }
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+                doc.setTextColor(26, 26, 26);
+                doc.text(item.label, ix + 9.5, iy);
+            });
+        }
+
+        /* ── CADRE ───────────────────────────────────────────── */
+        if (showFrame) {
+            doc.setDrawColor(80, 80, 80);
+            doc.setLineWidth(0.6);
+            doc.rect(0, HDR, W, mapAreaH, 'D');
+        }
+
+        /* ── COORDONNÉES AUX COINS ───────────────────────────── */
+        if (showCoords) {
+            const bounds = map.getBounds();
+            const fmt = v => v.toFixed(4) + '°';
+            const corners = [
+                { text: fmt(bounds.getNorth()) + ' N  ' + fmt(bounds.getWest()) + ' E', x: 2,     y: HDR + 4.5, align: 'left'  },
+                { text: fmt(bounds.getNorth()) + ' N  ' + fmt(bounds.getEast()) + ' E', x: W - 2, y: HDR + 4.5, align: 'right' },
+                { text: fmt(bounds.getSouth()) + ' N  ' + fmt(bounds.getWest()) + ' E', x: 2,     y: HDR + mapAreaH - 2, align: 'left'  },
+                { text: fmt(bounds.getSouth()) + ' N  ' + fmt(bounds.getEast()) + ' E', x: W - 2, y: HDR + mapAreaH - 2, align: 'right' },
+            ];
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(5.5);
+            doc.setTextColor(255, 255, 255);
+            corners.forEach(c => doc.text(c.text, c.x, c.y, { align: c.align }));
+        }
+
+        /* ── CRÉDITS ─────────────────────────────────────────── */
+        const credX = W - 12;
+        doc.setDrawColor(...T.sub);
+        doc.setLineWidth(0.25);
+        doc.line(W - 48, ftY + 2, W - 48, H - 2);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...T.cred);
+        doc.text('PNR du Mont-Ventoux', credX, ftY + 7, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(...T.ftLine);
+        const credLines = ['Master GEOTER', 'Avignon Universit\u00e9', '\u00a9 2025/2026 \u00b7 CC BY-SA 4.0', 'WGS 84 (EPSG:4326)'];
+        credLines.forEach((credLine, i) => {
+            doc.text(credLine, credX, ftY + 12 + i * 3.8, { align: 'right' });
+        });
+
+        /* ── SOURCES ─────────────────────────────────────────── */
+        if (showSources) {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(5.5);
+            doc.setTextColor(...T.ftLine);
+            doc.text('Sources\u00a0: LiDAR HD \u00b7 BD ORTHO IRC 2024 \u2014 IGN G\u00e9oplateforme \u00b7 OpenStreetMap contributors', 12, H - 2);
+        }
+
+        /* ── TÉLÉCHARGEMENT ──────────────────────────────────── */
+        const fileName = 'Carte_PNR_' + new Date().toISOString().slice(0, 10) + '.pdf';
+        doc.save(fileName);
+
+        toolInfo.show('<i class="fas fa-check-circle" style="color:#27ae60"></i> PDF t\u00e9l\u00e9charg\u00e9');
+        setTimeout(() => toolInfo.hide(), 3000);
+
+    } catch (err) {
+        ctrl.forEach(el => { el.style.visibility = el.dataset._printVis || ''; delete el.dataset._printVis; });
+        console.error('PDF error:', err);
+        toolInfo.show('<i class="fas fa-exclamation-triangle" style="color:#e74c3c"></i> Erreur lors de la génération PDF');
+        setTimeout(() => toolInfo.hide(), 4000);
+    }
+
+    btn.innerHTML = orig;
+    btn.disabled  = false;
+    document.getElementById('print-modal')?.classList.remove('active');
+});
+
+function _hexToRgb(hex) {
+    const h = hex.replace('#', '');
+    return { r: parseInt(h.slice(0,2),16), g: parseInt(h.slice(2,4),16), b: parseInt(h.slice(4,6),16) };
+}
+
+function _buildPrintLegend() {
+    const defs = [
+        { id: 'layer-terrasses',    label: 'Terrasses en pierres sèches',  colorId: 'color-terrasses',  def: '#e74c3c', type: 'fill'   },
+        { id: 'layer-ruptures',     label: 'Ruptures de pentes',            colorId: 'color-ruptures',   def: '#e67e22', type: 'line'   },
+        { id: 'layer-probabilites', label: "Probabilité d'occurrence",      type: 'grad', gradColors: ['#f8fff4','#508c32','#0a3c05'] },
+        { id: 'layer-mnt-ombrage',  label: 'MNT LiDAR',                    type: 'grad', gradColors: ['#285023','#c3d76e','#f5ebe1'] },
+        { id: 'layer-ombrage',      label: 'Ombrage',                       type: 'grad', gradColors: ['#222222','#888888','#e8e8e8'] },
+        { id: 'layer-communes',     label: 'Communes du PNR',               colorId: 'color-communes',   def: '#0d47a1', type: 'dash'   },
+        { id: 'layer-parcelles',    label: 'Parcellaire cadastral',         colorId: 'color-parcelles',  def: '#f1c40f', type: 'stroke' },
+    ];
+    const items = [];
+    defs.forEach(d => {
+        if (!document.getElementById(d.id)?.checked) return;
+        const color = d.colorId ? (document.getElementById(d.colorId)?.value || d.def) : null;
+        items.push({ label: d.label, type: d.type, color, gradColors: d.gradColors || null });
+    });
+    items.push({ label: 'Emprise PNR', type: 'solid-line', color: '#1e6b45' });
+    return items;
+}
+
+function _buildPrintScale(orient) {
+    const z       = map.getZoom();
+    const lat     = map.getCenter().lat;
+    const mpp     = 156543.03 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
+    const totalM  = mpp * map.getSize().x;
+    // Target ~18% of map width for the scale bar
+    const target  = totalM * 0.18;
+    const mag     = Math.pow(10, Math.floor(Math.log10(target)));
+    const nice    = [1, 2, 5, 10].reduce((best, f) => {
+        const v = f * mag;
+        return Math.abs(v - target) < Math.abs(best - target) ? v : best;
+    }, mag);
+    // Physical bar width in mm on A4 (full-bleed 0-margin)
+    const paperMm = orient === 'landscape' ? 297 : 210;
+    const barMm   = (nice / totalM * paperMm).toFixed(1);
+    const label   = nice >= 1000
+        ? `${(nice / 1000) % 1 === 0 ? nice / 1000 : (nice / 1000).toFixed(1)} km`
+        : `${nice} m`;
+    return { barMm, label };
+}
+
+
+const BASEMAP_STYLES = {
+    satellite: {
+        emprise:  { color: '#ffffff', weight: 3.5, opacity: 1, dashArray: null  },
+        communes: { color: '#38bdf8', weight: 2,   opacity: 1, dashArray: '8,5' }
+    },
+    esriLight: {
+        emprise:  { color: '#7b1fa2', weight: 4,   opacity: 1, dashArray: null  },
+        communes: { color: '#0d47a1', weight: 2,   opacity: 1, dashArray: '6,5' }
+    },
+    osm: {
+        emprise:  { color: '#004d40', weight: 3.5, opacity: 1, dashArray: null  },
+        communes: { color: '#880e4f', weight: 2,   opacity: 1, dashArray: '6,5' }
+    }
+};
+
+let currentBasemapKey = (() => {
+    const checked = document.querySelector('input[name="basemap"]:checked');
+    return checked ? checked.value : 'satellite';
+})();
+
+function applyBasemapStyles(key) {
+    const s = BASEMAP_STYLES[key] || BASEMAP_STYLES.satellite;
+
+    emprisePNR.setStyle({
+        color:     s.emprise.color,
+        weight:    s.emprise.weight,
+        opacity:   s.emprise.opacity,
+        dashArray: s.emprise.dashArray || null
+    });
+
+    const cStyle = {
+        color:     s.communes.color,
+        weight:    s.communes.weight,
+        opacity:   s.communes.opacity,
+        dashArray: s.communes.dashArray
+    };
+    communesPNR.setStyle(cStyle);
+
+    const picker  = document.getElementById('color-communes');
+    const swatchC = document.getElementById('legend-swatch-communes');
+    const swatchE = document.getElementById('legend-swatch-emprise');
+    if (picker)  picker.value = s.communes.color;
+    if (swatchC) swatchC.style.borderBottom = `2px dashed ${s.communes.color}`;
+    if (swatchE) swatchE.style.borderBottom  = `3px solid ${s.emprise.color}`;
+}
+
+const BASEMAP_TILES = {
+    osm:        (pane) => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { crossOrigin: 'anonymous', attribution: '&copy; OpenStreetMap contributors', maxZoom: 19, pane: pane || undefined }),
+    satellite:  (pane) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { crossOrigin: 'anonymous', attribution: 'Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community', maxZoom: 20, pane: pane || undefined }),
+    esriLight:  (pane) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { crossOrigin: 'anonymous', attribution: 'Tiles &copy; Esri', maxZoom: 16, pane: pane || undefined })
+};
+
+const basemaps = {
+    osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        crossOrigin: 'anonymous',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+    }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        crossOrigin: 'anonymous',
+        attribution: 'Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+        maxZoom: 20
+    }),
+    esriLight: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        crossOrigin: 'anonymous',
+        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+        maxZoom: 16
+    })
+};
+
+basemaps.satellite.addTo(map);
+
+basemaps.satellite.once('load', () => {
+    if (window._splashProgress) window._splashProgress(85, 'Couches vectorielles…');
+});
+
+const CMP_LABELS = { satellite: 'Satellite', esriLight: 'Esri Light', osm: 'OSM' };
+const CMP_DATA_PANES = [
+    { key: 'terrasses',    pane: 'pane-terrasses',    label: 'Terrasses',          checkId: 'layer-terrasses' },
+    { key: 'ruptures',     pane: 'pane-ruptures',     label: 'Ruptures de pentes', checkId: 'layer-ruptures' },
+    { key: 'probabilites', pane: 'pane-probabilites', label: 'Probabilite',        checkId: 'layer-probabilites' },
+    { key: 'mnt',          pane: 'pane-mnt',          label: 'MNT',               checkId: 'layer-mnt-ombrage' },
+    { key: 'ombrage',      pane: 'pane-ombrage',      label: 'Ombrage',            checkId: 'layer-ombrage' },
+    { key: 'communes',     pane: 'pane-communes',     label: 'Communes',           checkId: 'layer-communes' },
+    { key: 'parcelles',    pane: 'pane-parcelles',    label: 'Parcellaire',        checkId: 'layer-parcelles' },
+];
+let compareActive = false;
+let compareLeftLayer = null;
+let compareLeftKey = 'esriLight';
+let compareRightKey = 'satellite';
+let compareDivX = 0.5;
+let compareDivEl = null;
+let cmpLayerSides = Object.fromEntries(CMP_DATA_PANES.map(d => [d.key, 'both']));
+let communesCmpLeft = null;
+let empriseCmpLeft = null;
+
+function _makeCmpLeftPane(id, z) {
+    if (!map.getPane(id)) {
+        const p = map.createPane(id);
+        p.style.zIndex = z;
+        p.style.pointerEvents = 'none';
+    }
+}
+function _cmpStyleCommunes(key) { return { ...BASEMAP_STYLES[key].communes, fillColor: '#ffffff', fillOpacity: 0 }; }
+function _cmpStyleEmprise(key)  { return { ...BASEMAP_STYLES[key].emprise,  fillColor: 'transparent' }; }
+
+function _setClip(el, side, nw, se, clipX) {
+    if (!el) return;
+    if (side === 'left') {
+        el.style.clip = `rect(${nw.y}px,${clipX}px,${se.y}px,${nw.x}px)`;
+        el.style.clipPath = `polygon(${nw.x}px ${nw.y}px,${clipX}px ${nw.y}px,${clipX}px ${se.y}px,${nw.x}px ${se.y}px)`;
+    } else if (side === 'right') {
+        el.style.clip = `rect(${nw.y}px,${se.x}px,${se.y}px,${clipX}px)`;
+        el.style.clipPath = `polygon(${clipX}px ${nw.y}px,${se.x}px ${nw.y}px,${se.x}px ${se.y}px,${clipX}px ${se.y}px)`;
+    } else {
+        el.style.clip = '';
+        el.style.clipPath = '';
+    }
+}
+
+function _applyCompareClip() {
+    if (!compareActive) return;
+    const mapSize = map.getSize();
+    const nw = map.containerPointToLayerPoint([0, 0]);
+    const se = map.containerPointToLayerPoint(mapSize);
+    const clipX = nw.x + Math.round(mapSize.x * compareDivX);
+    _setClip(map.getPane('pane-compare'), 'left', nw, se, clipX);
+    CMP_DATA_PANES.forEach(({ key, pane: paneName }) => {
+        _setClip(map.getPane(paneName), cmpLayerSides[key], nw, se, clipX);
+    });
+    // Emprise: original = droite, copie = gauche
+    _setClip(map.getPane('pane-emprise'), 'right', nw, se, clipX);
+    if (empriseCmpLeft) _setClip(map.getPane('pane-emprise-cmp-left'), 'left', nw, se, clipX);
+    // Communes copie gauche : visible à gauche sauf si l'utilisateur a choisi "droite uniquement"
+    if (communesCmpLeft) {
+        const leftPane = map.getPane('pane-communes-cmp-left');
+        const communesSide = cmpLayerSides['communes'];
+        if (communesSide === 'right' || !map.hasLayer(communesPNR)) {
+            leftPane.style.display = 'none';
+        } else {
+            leftPane.style.display = '';
+            _setClip(leftPane, 'left', nw, se, clipX);
+        }
+    }
+}
+
+function _clearAllClips() {
+    ['pane-compare', 'pane-emprise', 'pane-communes-cmp-left', 'pane-emprise-cmp-left', ...CMP_DATA_PANES.map(d => d.pane)].forEach(name => {
+        const p = map.getPane(name);
+        if (p) { p.style.clip = ''; p.style.clipPath = ''; p.style.display = ''; }
+    });
+}
+
+function _dragCompare(clientX) {
+    const rect = document.getElementById('map').getBoundingClientRect();
+    compareDivX = Math.max(0.05, Math.min(0.95, (clientX - rect.left) / rect.width));
+    if (compareDivEl) compareDivEl.style.left = (compareDivX * 100) + '%';
+    _applyCompareClip();
+}
+
+function _buildCompareSidebarContent() {
+    const panel = document.getElementById('compare-sidebar-panel');
+    if (!panel) return;
+    const layerRows = CMP_DATA_PANES.map(({ key, label, checkId }) => {
+        const chk = document.getElementById(checkId);
+        const active = chk && chk.checked;
+        const isLeft  = cmpLayerSides[key] !== 'right';
+        const isRight = cmpLayerSides[key] !== 'left';
+        return `<tr${active ? '' : ' class="cmp-row-inactive"'} data-layer-row="${key}">
+            <td class="cmp-td-name">${label}</td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="left"${isLeft && active ? ' checked' : ''}></td>
+            <td class="cmp-td-check"><input type="checkbox" class="cmp-layer-chk" data-layer="${key}" data-col="right"${isRight && active ? ' checked' : ''}></td>
+        </tr>`;
+    }).join('');
+    panel.innerHTML = `
+        <table class="cmp-sb-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th class="cmp-th-left">&#9664; G</th>
+                    <th class="cmp-th-right">D &#9654;</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="cmp-section-row"><td colspan="3">Couches</td></tr>
+                ${layerRows}
+                <tr class="cmp-section-row"><td colspan="3">Fond de carte</td></tr>
+                ${Object.entries(CMP_LABELS).map(([k, v]) => `
+                <tr>
+                    <td class="cmp-td-name">${v}</td>
+                    <td class="cmp-td-check"><input type="radio" name="cmp-bm-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}></td>
+                    <td class="cmp-td-check"><input type="radio" name="cmp-bm-right" value="${k}"${compareRightKey === k ? ' checked' : ''}></td>
+                </tr>`).join('')}
+            </tbody>
+        </table>`;
+    panel.querySelectorAll('input[name="cmp-bm-left"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            compareLeftKey = radio.value;
+            if (compareLeftLayer) map.removeLayer(compareLeftLayer);
+            compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
+            compareLeftLayer.addTo(map);
+            if (communesCmpLeft) communesCmpLeft.setStyle(_cmpStyleCommunes(compareLeftKey));
+            if (empriseCmpLeft)  empriseCmpLeft.setStyle(_cmpStyleEmprise(compareLeftKey));
+            _applyCompareClip();
+        });
+    });
+    panel.querySelectorAll('input[name="cmp-bm-right"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            compareRightKey = radio.value;
+            switchBasemap(compareRightKey);
+            communesPNR.setStyle(_cmpStyleCommunes(compareRightKey));
+            emprisePNR.setStyle(_cmpStyleEmprise(compareRightKey));
+        });
+    });
+    panel.querySelectorAll('.cmp-layer-chk').forEach(chk => {
+        chk.addEventListener('change', () => {
+            const layerKey = chk.dataset.layer;
+            const entry = CMP_DATA_PANES.find(d => d.key === layerKey);
+            const mainChk = entry ? document.getElementById(entry.checkId) : null;
+            const leftChk  = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
+            const rightChk = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="right"]`);
+            const l = leftChk?.checked, r = rightChk?.checked;
+            // Activate main layer if it was inactive and at least one side is now checked
+            if ((l || r) && mainChk && !mainChk.checked) {
+                mainChk.checked = true;
+                mainChk.dispatchEvent(new Event('change'));
+                const row = panel.querySelector(`tr[data-layer-row="${layerKey}"]`);
+                if (row) row.classList.remove('cmp-row-inactive');
+            }
+            // Deactivate if both sides unchecked
+            if (!l && !r && mainChk && mainChk.checked) {
+                mainChk.checked = false;
+                mainChk.dispatchEvent(new Event('change'));
+                const row = panel.querySelector(`tr[data-layer-row="${layerKey}"]`);
+                if (row) row.classList.add('cmp-row-inactive');
+            }
+            cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : r ? 'right' : 'both';
+            // Sync left copy for communes
+            if (layerKey === 'communes' && communesCmpLeft) {
+                const active = !(!l && !r) && mainChk?.checked;
+                if (active && !map.hasLayer(communesCmpLeft)) communesCmpLeft.addTo(map);
+                else if (!active && map.hasLayer(communesCmpLeft)) map.removeLayer(communesCmpLeft);
+            }
+            _applyCompareClip();
+        });
+    });
+}
+
+function enableCompare() {
+    compareActive = true;
+    document.getElementById('tool-compare')?.classList.add('compare-active');
+    const toggle = document.getElementById('compare-toggle');
+    if (toggle) toggle.checked = true;
+    compareRightKey = currentBasemapKey;
+    compareLeftKey = currentBasemapKey === 'satellite' ? 'esriLight' : 'satellite';
+    CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
+    compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
+    compareLeftLayer.addTo(map);
+    // Copies gauche pour communes + emprise (couleur adaptée au fond de plan gauche)
+    _makeCmpLeftPane('pane-communes-cmp-left', 204);
+    _makeCmpLeftPane('pane-emprise-cmp-left',  208);
+    communesCmpLeft = L.geoJSON(communesPNR.toGeoJSON(), { pane: 'pane-communes-cmp-left', style: _cmpStyleCommunes(compareLeftKey) });
+    empriseCmpLeft  = L.geoJSON(emprisePNR.toGeoJSON(),  { pane: 'pane-emprise-cmp-left',  style: _cmpStyleEmprise(compareLeftKey)  });
+    if (map.hasLayer(communesPNR)) communesCmpLeft.addTo(map);
+    empriseCmpLeft.addTo(map);
+    // Original communes + emprise : style du fond de plan droit
+    communesPNR.setStyle(_cmpStyleCommunes(compareRightKey));
+    emprisePNR.setStyle(_cmpStyleEmprise(compareRightKey));
+    compareDivX = 0.5;
+    _applyCompareClip();
+    map.on('move zoomend', _applyCompareClip);
+    // Fade out sidebar sections avant d'ajouter compare-mode
+    const _cmpSecs = document.querySelectorAll('#sidebar-page-1 .sidebar-search, #sidebar-page-1 .control-group');
+    _cmpSecs.forEach((el, i) => {
+        el.style.transition = `opacity 180ms ${i * 25}ms ease, transform 180ms ${i * 25}ms ease`;
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-8px)';
+    });
+    setTimeout(() => {
+        document.getElementById('sidebar-page-1')?.classList.add('compare-mode');
+        _cmpSecs.forEach(el => { el.style.transition = ''; el.style.opacity = ''; el.style.transform = ''; });
+    }, 200);
+    const panel = document.getElementById('compare-sidebar-panel');
+    if (panel) { _buildCompareSidebarContent(); requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.add('open'))); }
+    const mapEl = document.getElementById('map');
+    compareDivEl = document.createElement('div');
+    compareDivEl.className = 'compare-divider';
+    compareDivEl.style.left = '50%';
+    compareDivEl.innerHTML = '<div class="compare-handle"><i class="fas fa-arrows-left-right"></i></div>';
+    mapEl.appendChild(compareDivEl);
+    L.DomEvent.on(compareDivEl, 'mousedown', function (e) {
+        L.DomEvent.stop(e);
+        map.dragging.disable();
+        compareDivEl.classList.add('dragging');
+        const onMove = ev => _dragCompare(ev.clientX);
+        const onUp = () => {
+            map.dragging.enable();
+            compareDivEl.classList.remove('dragging');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+    L.DomEvent.on(compareDivEl, 'touchstart', function (e) {
+        L.DomEvent.stop(e);
+        map.dragging.disable();
+        compareDivEl.classList.add('dragging');
+        const onMove = ev => _dragCompare(ev.touches[0].clientX);
+        const onEnd = () => {
+            map.dragging.enable();
+            compareDivEl.classList.remove('dragging');
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+        };
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+    });
+}
+
+function disableCompare() {
+    compareActive = false;
+    map.off('move zoomend', _applyCompareClip);
+    document.getElementById('tool-compare')?.classList.remove('compare-active');
+    const toggle = document.getElementById('compare-toggle');
+    if (toggle) toggle.checked = false;
+    if (compareLeftLayer) { map.removeLayer(compareLeftLayer); compareLeftLayer = null; }
+    if (communesCmpLeft) { map.removeLayer(communesCmpLeft); communesCmpLeft = null; }
+    if (empriseCmpLeft)  { map.removeLayer(empriseCmpLeft);  empriseCmpLeft  = null; }
+    _clearAllClips();
+    applyBasemapStyles(currentBasemapKey);
+    if (compareDivEl) { compareDivEl.remove(); compareDivEl = null; }
+    document.getElementById('sidebar-page-1')?.classList.remove('compare-mode');
+    const panel = document.getElementById('compare-sidebar-panel');
+    if (panel) {
+        panel.classList.remove('open');
+        setTimeout(() => { panel.innerHTML = ''; }, 460);
+    }
+    // Fade in sections après suppression de compare-mode
+    setTimeout(() => {
+        const secs = document.querySelectorAll('#sidebar-page-1 .sidebar-search, #sidebar-page-1 .control-group');
+        secs.forEach((el, i) => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateX(-8px)';
+            el.style.transition = `opacity 220ms ${60 + i * 35}ms ease, transform 220ms ${60 + i * 35}ms ease`;
+        });
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            secs.forEach(el => { el.style.opacity = ''; el.style.transform = ''; });
+            setTimeout(() => secs.forEach(el => el.style.transition = ''), 500);
+        }));
+    }, 20);
+    CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
+}
+
+function switchBasemap(newKey) {
+    const newLayer = basemaps[newKey];
+    if (!newLayer) return;
+    Object.values(basemaps).forEach(layer => {
+        if (map.hasLayer(layer) && layer !== newLayer) map.removeLayer(layer);
+    });
+    newLayer.addTo(map);
+    if (newLayer.setOpacity) {
+        newLayer.setOpacity(0);
+        let op = 0;
+        const iv = setInterval(() => {
+            op = Math.min(1, op + 0.1);
+            newLayer.setOpacity(op);
+            if (op >= 1) clearInterval(iv);
+        }, 30);
+    }
+    currentBasemapKey = newKey;
+    applyBasemapStyles(newKey);
+    updateFloatingLegend();
+}
+
+const contextMenu = L.DomUtil.create('div', 'context-menu', document.body);
+contextMenu.innerHTML = `
+    <div class="context-menu-item" onclick="document.getElementById('tool-home').click()"><i class="fas fa-home"></i> Accueil</div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" onclick="document.getElementById('tool-distance').click()"><i class="fas fa-ruler"></i> Mesurer une distance</div>
+    <div class="context-menu-item" onclick="document.getElementById('tool-area').click()"><i class="fas fa-draw-polygon"></i> Mesurer une surface</div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" onclick="document.getElementById('tool-coords').click()"><i class="fas fa-crosshairs"></i> Copier coordonnées</div>
+    <div class="context-menu-item" onclick="document.getElementById('tool-export').click()"><i class="fas fa-camera"></i> Faire une capture</div>
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item danger" onclick="clearMeasure(); contextMenu.style.display='none';"><i class="fas fa-trash"></i> Nettoyer tout</div>
+`;
+
+map.on('contextmenu', function (e) {
+    contextMenu.style.display = 'flex';
+    contextMenu.style.left = e.originalEvent.pageX + 'px';
+    contextMenu.style.top = e.originalEvent.pageY + 'px';
+});
+
+map.on('click', () => { contextMenu.style.display = 'none'; });
+document.addEventListener('click', (e) => {
+    if (!contextMenu.contains(e.target)) contextMenu.style.display = 'none';
+});
+
+const _eStyle = BASEMAP_STYLES[currentBasemapKey].emprise;
+const emprisePNR = L.geoJSON(null, {
+    pane: 'pane-emprise',
+    style: {
+        color:     _eStyle.color,
+        weight:    _eStyle.weight,
+        opacity:   _eStyle.opacity,
+        dashArray: _eStyle.dashArray || null,
+        fillColor: 'transparent'
+    }
+}).addTo(map);
+
+fetch('data/Emprise_PNR.geojson')
+    .then(r => {
+        if (!r.ok) throw new Error('Emprise_PNR.geojson introuvable');
+        return r.json();
+    })
+    .then(data => {
+        emprisePNR.addData(data);
+        applyBasemapStyles(currentBasemapKey);
+        if (emprisePNR.getBounds().isValid()) map.fitBounds(emprisePNR.getBounds());
+        if (window._miniMap && window._miniMap._miniMap) {
+            L.geoJSON(data, { style: { color: '#2e7d32', weight: 2, opacity: 1, fillColor: '#81c784', fillOpacity: 0.3 } }).addTo(window._miniMap._miniMap);
+        }
+    })
+    .catch(err => console.warn('[Emprise]', err.message));
+
+const communesPNR = L.geoJSON(null, {
+    pane: 'pane-communes',
+    style: {
+        color: '#2c3e50',
+        weight: 2.5,
+        opacity: 0.9,
+        fillColor: '#ffffff',
+        fillOpacity: 0,
+        dashArray: '6, 6',
+        lineCap: 'round',
+        lineJoin: 'round'
+    }
+}).addTo(map);
+
+fetch('data/Communes_PNR.geojson')
+    .then(r => {
+        if (!r.ok) throw new Error('Communes_PNR.geojson introuvable');
+        return r.json();
+    })
+    .then(data => {
+        communesPNR.addData(data);
+        applyBasemapStyles(currentBasemapKey);
+        window._communeIndex = data.features.map(f => {
+            const name = f.properties.nom_officiel || f.properties.NOM || f.properties.nom || f.properties.NAME || f.properties.libelle || f.properties.commune || '';
+            const bounds = L.geoJSON(f).getBounds();
+            return { name, bounds };
+        }).filter(c => c.name && c.bounds.isValid());
+        if (window._miniMap && window._miniMap._miniMap) {
+            L.geoJSON(data, { style: { color: '#1b5e20', weight: 0.8, opacity: 0.7, fillOpacity: 0, dashArray: '3,3' } }).addTo(window._miniMap._miniMap);
+        }
+    })
+    .catch(err => console.warn('[Communes]', err.message));
+
+let parcellesData = null;
+let parcellesPNR = L.layerGroup();
+
+function loadParcellesVectorTiles() {
+    if (!parcellesData) return;
+    parcellesPNR.clearLayers();
+    const vectorGrid = L.vectorGrid.slicer(parcellesData, {
+        rendererFactory: L.canvas.tile,
+        pane: 'pane-parcelles',
+        vectorTileLayerStyles: {
+            sliced: {
+                fillColor: '#f1c40f',
+                fillOpacity: 0.05,
+                stroke: true,
+                color: '#f39c12',
+                weight: 0.8,
+                opacity: 0.6
+            }
+        },
+        maxZoom: 22,
+        indexMaxZoom: 4,
+        interactive: true,
+        tolerance: 3,
+        extent: 512,
+        buffer: 64,
+        lineMetrics: false,
+        getFeatureId: function (f) {
+            return f.properties.__id !== undefined ? f.properties.__id : Math.random().toString(36).substr(2, 9);
+        }
+    });
+    parcellesPNR.addLayer(vectorGrid);
+}
+
+map.on('click', function (e) {
+    if (!parcellesData) return;
+    if (!document.getElementById('layer-parcelles')?.checked) return;
+    const pt = turf.point([e.latlng.lng, e.latlng.lat]);
+    let clickedFeature = null;
+    toolInfo.show('<i class="fas fa-spinner fa-spin"></i> Recherche de la parcelle...');
+    setTimeout(() => {
+        const clickLng = e.latlng.lng;
+        const clickLat = e.latlng.lat;
+        for (let i = 0; i < parcellesData.features.length; i++) {
+            const f = parcellesData.features[i];
+            if (!f._bbox) f._bbox = turf.bbox(f);
+            const [minX, minY, maxX, maxY] = f._bbox;
+            if (clickLng < minX || clickLng > maxX || clickLat < minY || clickLat > maxY) continue;
+            try {
+                if (turf.booleanPointInPolygon(pt, f)) { clickedFeature = f; break; }
+            } catch (_) { }
+        }
+        toolInfo.hide();
+        if (clickedFeature) {
+            const props = clickedFeature.properties;
+            let popupContent = '<div style="max-height: 200px; overflow-y: auto; font-family: Roboto; font-size: 13px;"><b>Infos Parcelle</b><br><table style="width:100%; text-align:left; margin-top:5px;">';
+            let foundProps = false;
+            for (let prop in props) {
+                if (prop !== '__id' && props[prop]) {
+                    popupContent += `<tr><td style="color:#666; padding-right:10px;">${prop}</td><td>${props[prop]}</td></tr>`;
+                    foundProps = true;
+                }
+            }
+            popupContent += '</table></div>';
+            if (!foundProps) popupContent = '<b>Parcelle</b><br>Aucune information disponible.';
+            L.popup().setLatLng(e.latlng).setContent(popupContent).openOn(map);
+        } else {
+            L.popup().setLatLng(e.latlng).setContent('<i>Aucune parcelle trouvée à cet endroit.</i>').openOn(map);
+        }
+    }, 10);
+});
+
+toolInfo.show('<i class="fas fa-spinner fa-spin"></i> Préparation des parcelles (peut prendre 5-10s)...');
+fetch('data/Parcelles_PNR.geojson')
+    .then(r => {
+        if (!r.ok) throw new Error('Parcelles_PNR.geojson introuvable');
+        return r.json();
+    })
+    .then(data => {
+        data.features.forEach((f, i) => {
+            f.properties.__id = i;
+            f._bbox = turf.bbox(f);
+        });
+        parcellesData = data;
+        loadParcellesVectorTiles();
+        toolInfo.show('<i class="fas fa-check" style="color:#2ecc71"></i> Parcelles prêtes !');
+        setTimeout(() => toolInfo.hide(), 2000);
+        if (document.getElementById('layer-parcelles')?.checked) map.addLayer(parcellesPNR);
+    })
+    .catch(err => {
+        toolInfo.hide();
+        console.warn('[Parcelles]', err.message);
+    });
+
+function _probaColor(t) {
+    const stops = [
+        { p: 0.00, c: [255, 255, 255] },
+        { p: 0.20, c: [200, 230, 180] },
+        { p: 0.40, c: [140, 190, 100] },
+        { p: 0.60, c: [80, 140, 50] },
+        { p: 0.80, c: [30, 100, 20] },
+        { p: 1.00, c: [10, 60, 5] }
+    ];
+    let lo = 0;
+    for (let i = 0; i < stops.length - 1; i++) { if (t <= stops[i + 1].p) { lo = i; break; } }
+    const hi = Math.min(lo + 1, stops.length - 1);
+    const span = stops[hi].p - stops[lo].p;
+    const f = span === 0 ? 0 : (t - stops[lo].p) / span;
+    return stops[lo].c.map((v, i) => Math.round(v + (stops[hi].c[i] - v) * f));
+}
+
+const ProbaColorLayer = L.TileLayer.extend({
+    createTile(coords, done) {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            ctx.drawImage(img, 0, 0, 256, 256);
+            try {
+                const id = ctx.getImageData(0, 0, 256, 256);
+                const d = id.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i + 3] === 0) continue;
+                    const t = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) / 255;
+                    const [r, g, b] = _probaColor(t);
+                    d[i] = r; d[i + 1] = g; d[i + 2] = b;
+                }
+                ctx.putImageData(id, 0, 0);
+            } catch (_) { }
+            done(null, canvas);
+        };
+        img.onerror = () => done(null, canvas);
+        img.src = this.getTileUrl(coords);
+        return canvas;
+    }
+});
+
+const probabilites = new ProbaColorLayer(
+    'https://tiles.arcgis.com/tiles/y9Ov7ybbaxLMONwL/arcgis/rest/services/Proba_Online/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '&copy; PNR du Mont-Ventoux – Probabilité d\'occurrence', maxZoom: 19, maxNativeZoom: 17, opacity: 1, pane: 'pane-probabilites' }
+);
+
+function _mntElevColor(t) {
+    const stops = [
+        { p: 0.00, c: [40, 80, 35] },
+        { p: 0.18, c: [85, 150, 55] },
+        { p: 0.35, c: [145, 190, 85] },
+        { p: 0.50, c: [195, 215, 110] },
+        { p: 0.63, c: [225, 205, 115] },
+        { p: 0.76, c: [215, 155, 85] },
+        { p: 0.90, c: [205, 125, 105] },
+        { p: 1.00, c: [245, 235, 225] }
+    ];
+    let lo = 0;
+    for (let i = 0; i < stops.length - 1; i++) { if (t <= stops[i + 1].p) { lo = i; break; } }
+    const hi = Math.min(lo + 1, stops.length - 1);
+    const span = stops[hi].p - stops[lo].p;
+    const f = span === 0 ? 0 : (t - stops[lo].p) / span;
+    return stops[lo].c.map((v, i) => Math.round(v + (stops[hi].c[i] - v) * f));
+}
+
+const MNTColorLayer = L.TileLayer.extend({
+    createTile(coords, done) {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            ctx.drawImage(img, 0, 0, 256, 256);
+            try {
+                const id = ctx.getImageData(0, 0, 256, 256);
+                const d = id.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i + 3] === 0) continue;
+                    const t = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) / 255;
+                    const [r, g, b] = _mntElevColor(t);
+                    d[i] = r; d[i + 1] = g; d[i + 2] = b;
+                }
+                ctx.putImageData(id, 0, 0);
+            } catch (_) { }
+            done(null, canvas);
+        };
+        img.onerror = () => done(null, canvas);
+        img.src = this.getTileUrl(coords);
+        return canvas;
+    }
+});
+
+const mntOmbrage = new MNTColorLayer(
+    'https://tiles.arcgis.com/tiles/y9Ov7ybbaxLMONwL/arcgis/rest/services/MNT_Online/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '&copy; PNR du Mont-Ventoux – MNT LiDAR', maxZoom: 19, maxNativeZoom: 17, opacity: 1, pane: 'pane-mnt' }
+);
+
+const ombrageRaster = L.tileLayer(
+    'https://tiles.arcgis.com/tiles/y9Ov7ybbaxLMONwL/arcgis/rest/services/Ombrage_Online/MapServer/tile/{z}/{y}/{x}',
+    { attribution: '&copy; PNR du Mont-Ventoux – Ombrage', maxZoom: 19, maxNativeZoom: 17, opacity: 1, pane: 'pane-ombrage' }
+);
+
+const GEOM_ZOOM      = 14;
+const MAX_CENTROIDS  = 15000;
+const MAX_GEOMS      = 4000;
+
+class ClusteredArcGISLayer {
+    constructor(serviceUrl, geomStyle, options = {}) {
+        this.serviceUrl    = serviceUrl;
+        this.geomZoom      = options.geomZoom  ?? GEOM_ZOOM;
+        this.maxItems      = options.maxItems  ?? 2000;
+        this.debounceMs    = options.debounce  ?? 400;
+        this.label         = options.label     ?? 'Couche';
+        this._clusterHue   = options.clusterHue   ?? 200;
+        this._geomStyle    = { ...geomStyle };
+        this._pane         = options.pane ?? null;
+        this._interactive  = options.interactive ?? false;
+        this._outFields    = options.outFields ?? 'FID';
+
+        this._cluster = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            maxClusterRadius:    60,
+            spiderfyOnMaxZoom:   false,
+            iconCreateFunction:  (c) => this._clusterIcon(c),
+            clusterPane:         this._pane ?? undefined,
+        });
+
+        this._geomLayer = L.geoJSON(null, {
+            pane:     this._pane ?? undefined,
+            renderer: L.canvas({ padding: 0.5, pane: this._pane ?? undefined }),
+            style:    () => ({ ...this._geomStyle }),
+            interactive: this._interactive,
+            onEachFeature: this._interactive ? (f, layer) => this._bindPopup(f, layer) : undefined,
+        });
+
+        this._centroidIds = new Set();
+        this._geomIds     = new Set();
+        this._ctrlC = null;
+        this._ctrlG = null;
+        this._timer = null;
+        this._map   = null;
+        this._on    = false;
+        this._mode  = null;
+    }
+
+    _clusterIcon(cluster) {
+        const n = cluster.getChildCount();
+        const t = Math.min(1, Math.log(n) / Math.log(2000));
+        const size = Math.round(18 + t * 26);
+        const lig = Math.round(78 - t * 44);
+        const sat = Math.round(55 + t * 33);
+        const h   = this._clusterHue;
+        const bg  = `hsl(${h},${sat}%,${lig}%)`;
+        const bdr = `hsl(${h},${sat}%,${Math.max(15, lig - 18)}%)`;
+        const label = n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
+        const fs = Math.round(size * 0.38);
+        const txtColor = lig < 50 ? '#fff' : '#1a1a1a';
+        return L.divIcon({
+            html: `<div class="arcgis-cluster-dot" style="width:${size}px;height:${size}px;background:${bg};border-color:${bdr};font-size:${fs}px;color:${txtColor}">${label}</div>`,
+            className: '',
+            iconSize:   [size, size],
+            iconAnchor: [size / 2, size / 2],
+        });
+    }
+
+    _bindPopup(feature, layer) {
+        layer.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            const p = feature.properties || {};
+            const area = p.Shape__Area ?? p.Shape_Area ?? null;
+            const perim = p.Shape__Length ?? p.Shape_Length ?? null;
+            let html = '<div class="terrasse-popup"><div class="terrasse-popup-title"><i class="fas fa-draw-polygon"></i> Terrasse</div>';
+            if (area !== null || perim !== null) {
+                if (area !== null) {
+                    const areaVal = area >= 10000 ? (area / 10000).toFixed(2) + ' ha' : Math.round(area) + ' m\u00b2';
+                    html += '<div class="terrasse-popup-row"><span>Surface</span><b>' + areaVal + '</b></div>';
+                }
+                if (perim !== null) {
+                    const perimVal = perim >= 1000 ? (perim / 1000).toFixed(2) + ' km' : Math.round(perim) + ' m';
+                    html += '<div class="terrasse-popup-row"><span>P\u00e9rim\u00e8tre</span><b>' + perimVal + '</b></div>';
+                }
+            } else {
+                html += '<div class="terrasse-popup-row"><span>Aucune donn\u00e9e attributaire</span></div>';
+            }
+            html += '</div>';
+            L.popup({ className: 'terrasse-popup-wrap', closeButton: true })
+                .setLatLng(e.latlng)
+                .setContent(html)
+                .openOn(this._map);
+        });
+    }
+
+    init(map) { this._map = map; }
+
+    preload() {
+        if (this._on || this._preloaded) return;
+        if (!this._map) return;
+        this._preloaded = true;
+        const zoom = this._map.getZoom();
+        const bbox = this._bbox();
+        if (zoom < this.geomZoom) {
+            this._mode = 'cluster';
+            this._loadCentroids(bbox).catch(() => {});
+        } else {
+            this._mode = 'geom';
+            this._loadGeometries(bbox).catch(() => {});
+        }
+    }
+
+    enable() {
+        if (this._on) return;
+        this._on = true;
+        if (this._preloaded && this._mode) {
+            if (this._mode === 'cluster' && !this._map.hasLayer(this._cluster)) {
+                this._map.addLayer(this._cluster);
+            } else if (this._mode === 'geom' && !this._map.hasLayer(this._geomLayer)) {
+                this._map.addLayer(this._geomLayer);
+            }
+        }
+        this._schedule(false);
+    }
+
+    disable() {
+        this._on        = false;
+        this._preloaded = false;
+        this._mode      = null;
+        this._cancelAll();
+        this._cluster.clearLayers();
+        this._geomLayer.clearLayers();
+        this._centroidIds.clear();
+        this._geomIds.clear();
+        if (this._map?.hasLayer(this._cluster))   this._map.removeLayer(this._cluster);
+        if (this._map?.hasLayer(this._geomLayer)) this._map.removeLayer(this._geomLayer);
+        toolInfo.hide();
+    }
+
+    onMove(isZoom) { if (this._on) this._schedule(isZoom); }
+
+    _cancelAll() {
+        clearTimeout(this._timer);
+        this._timer = null;
+        if (this._ctrlC) { this._ctrlC.abort(); this._ctrlC = null; }
+        if (this._ctrlG) { this._ctrlG.abort(); this._ctrlG = null; }
+    }
+
+    _schedule(isZoom) {
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => this._load(isZoom), this.debounceMs);
+    }
+
+    _bbox() {
+        const b = this._map.getBounds().pad(0.05);
+        return [
+            b.getWest().toFixed(6), b.getSouth().toFixed(6),
+            b.getEast().toFixed(6), b.getNorth().toFixed(6),
+        ].join(',');
+    }
+
+    async _load(isZoom) {
+        if (!this._on || !this._map) return;
+        const zoom = this._map.getZoom();
+        const bbox = this._bbox();
+
+        if (zoom < this.geomZoom) {
+            if (this._mode !== 'cluster') {
+                this._mode = 'cluster';
+                if (this._ctrlG) { this._ctrlG.abort(); this._ctrlG = null; }
+                this._geomLayer.clearLayers();
+                this._geomIds.clear();
+                if (this._map.hasLayer(this._geomLayer)) this._map.removeLayer(this._geomLayer);
+                this._cluster.clearLayers();
+                this._centroidIds.clear();
+                if (!this._map.hasLayer(this._cluster)) this._map.addLayer(this._cluster);
+            }
+            await this._loadCentroids(bbox);
+
+        } else {
+            if (this._mode !== 'geom') {
+                this._mode = 'geom';
+                if (this._ctrlC) { this._ctrlC.abort(); this._ctrlC = null; }
+                this._cluster.clearLayers();
+                this._centroidIds.clear();
+                if (this._map.hasLayer(this._cluster)) this._map.removeLayer(this._cluster);
+                this._geomLayer.clearLayers();
+                this._geomIds.clear();
+                if (!this._map.hasLayer(this._geomLayer)) this._map.addLayer(this._geomLayer);
+            } else if (isZoom) {
+                this._geomLayer.clearLayers();
+                this._geomIds.clear();
+            }
+            await this._loadGeometries(bbox);
+        }
+    }
+
+    async _loadCentroids(bboxStr) {
+        const ctrl = new AbortController();
+        this._ctrlC = ctrl;
+
+        if (this._centroidIds.size > MAX_CENTROIDS) {
+            this._cluster.clearLayers();
+            this._centroidIds.clear();
+        }
+
+        toolInfo.show(`<i class="fas fa-spinner fa-spin"></i> ${this.label} : chargement…`);
+
+        const [w, s, e, n] = bboxStr.split(',').map(Number);
+        const dw = (e - w) / 3, dh = (n - s) / 3;
+        const cells = [];
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 3; col++) {
+                cells.push([
+                    (w + col * dw).toFixed(6),       (s + row * dh).toFixed(6),
+                    (w + (col + 1) * dw).toFixed(6), (s + (row + 1) * dh).toFixed(6),
+                ].join(','));
+            }
+        }
+
+        try {
+            await Promise.all(cells.map(cb => this._fetchCentroidsCell(cb, ctrl)));
+            if (ctrl.signal.aborted) return;
+            const total = this._cluster.getLayers().length;
+            if (total > 0) {
+                toolInfo.show(`<i class="fas fa-check" style="color:#2ecc71"></i> ${this.label} : ~${total} entités`);
+                setTimeout(() => toolInfo.hide(), 2000);
+            } else {
+                toolInfo.hide();
+            }
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.warn('[ClusteredArcGIS centroids]', this.label, e.message);
+                toolInfo.hide();
+            }
+        }
+    }
+
+    async _fetchCentroidsCell(cellBbox, ctrl) {
+        const url = `${this.serviceUrl}?where=1%3D1` +
+            `&geometry=${encodeURIComponent(cellBbox)}` +
+            `&geometryType=esriGeometryEnvelope` +
+            `&spatialRel=esriSpatialRelIntersects` +
+            `&outFields=FID` +
+            `&f=geojson` +
+            `&resultRecordCount=400`;
+
+        const resp = await fetch(url, { signal: ctrl.signal });
+        if (ctrl.signal.aborted) return;
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        if (ctrl.signal.aborted || data.error) return;
+
+        const markers = [];
+        for (const f of (data.features || [])) {
+            if (!f.geometry) continue;
+            const id = f.properties?.FID ?? f.properties?.OBJECTID;
+            if (id != null && this._centroidIds.has(id)) continue;
+            if (id != null) this._centroidIds.add(id);
+
+            const geom = f.geometry;
+            let lng, lat;
+            if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length) {
+                const ring = geom.coordinates[0];
+                [lng, lat] = ring[Math.floor(ring.length / 2)];
+            } else if (geom.type === 'MultiPolygon' && geom.coordinates?.[0]?.[0]?.length) {
+                const ring = geom.coordinates[0][0];
+                [lng, lat] = ring[Math.floor(ring.length / 2)];
+            } else if (geom.type === 'LineString' && geom.coordinates?.length) {
+                [lng, lat] = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+            } else if (geom.type === 'MultiLineString' && geom.coordinates?.[0]?.length) {
+                const line = geom.coordinates[0];
+                [lng, lat] = line[Math.floor(line.length / 2)];
+            } else if (geom.type === 'Point') {
+                [lng, lat] = geom.coordinates;
+            } else continue;
+
+            markers.push(L.marker([lat, lng], {
+                icon: L.divIcon({ className: '', iconSize: [0, 0] }),
+                interactive: false,
+            }));
+        }
+        if (markers.length) this._cluster.addLayers(markers);
+    }
+
+    async _loadGeometries(bbox) {
+        if (this._ctrlG) this._ctrlG.abort();
+        const ctrl = new AbortController();
+        this._ctrlG = ctrl;
+
+        if (this._geomIds.size > MAX_GEOMS) {
+            this._geomLayer.clearLayers();
+            this._geomIds.clear();
+        }
+
+        toolInfo.show(`<i class="fas fa-spinner fa-spin"></i> ${this.label} : géométries…`);
+
+        const url = `${this.serviceUrl}?where=1%3D1` +
+            `&geometry=${encodeURIComponent(bbox)}` +
+            `&geometryType=esriGeometryEnvelope` +
+            `&spatialRel=esriSpatialRelIntersects` +
+            `&outFields=${this._outFields}&f=geojson` +
+            `&resultRecordCount=${this.maxItems}`;
+
+        try {
+            const resp = await fetch(url, { signal: ctrl.signal });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+            if (ctrl.signal.aborted) return;
+
+            const fresh = (data.features || []).filter(f => {
+                const id = f.properties?.FID ?? f.properties?.OBJECTID;
+                if (id == null || this._geomIds.has(id)) return false;
+                this._geomIds.add(id);
+                return true;
+            });
+
+            if (fresh.length) {
+                this._geomLayer.addData({ type: 'FeatureCollection', features: fresh });
+            }
+
+            const total = this._geomIds.size;
+            if (total > 0) {
+                toolInfo.show(`<i class="fas fa-check" style="color:#2ecc71"></i> ${this.label} : ${total} entité(s)`);
+                setTimeout(() => toolInfo.hide(), 2000);
+            } else {
+                toolInfo.show(`<i class="fas fa-info-circle"></i> ${this.label} : aucune entité ici`);
+                setTimeout(() => toolInfo.hide(), 2000);
+            }
+
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                console.warn('[ClusteredArcGIS geometries]', this.label, e.message);
+                toolInfo.hide();
+            }
+        }
+    }
+
+    setStyle(partial) {
+        Object.assign(this._geomStyle, partial);
+        this._geomLayer.setStyle(() => ({ ...this._geomStyle }));
+    }
+
+    setClusterColor(hexColor) {
+        const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+        const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+        const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h = 0;
+        if (max !== min) {
+            const d = max - min;
+            if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+            else if (max === g) h = ((b - r) / d + 2) / 6;
+            else h = ((r - g) / d + 4) / 6;
+        }
+        this._clusterHue = Math.round(h * 360);
+        if (this._mode === 'cluster' && this._map?.hasLayer(this._cluster)) {
+            const markers = this._cluster.getLayers();
+            this._cluster.clearLayers();
+            if (markers.length) this._cluster.addLayers(markers);
+        }
+    }
+}
+
+const terrassesLayer = new ClusteredArcGISLayer(
+    'https://services5.arcgis.com/y9Ov7ybbaxLMONwL/arcgis/rest/services/TERRASSES/FeatureServer/0/query',
+    { color: '#e74c3c', weight: 1.5, opacity: 0.9, fillColor: '#c0392b', fillOpacity: 0.45 },
+    { debounce: 400, label: 'Terrasses RF', clusterHue: 6, pane: 'pane-terrasses', interactive: true, outFields: 'FID,Shape__Area,Shape__Length' }
+);
+
+const rupturesLayer = new ClusteredArcGISLayer(
+    'https://services5.arcgis.com/y9Ov7ybbaxLMONwL/arcgis/rest/services/ruptures_squelette/FeatureServer/0/query',
+    { color: '#e67e22', weight: 2, opacity: 0.9, fillOpacity: 0 },
+    { debounce: 400, label: 'Ruptures de pentes', clusterHue: 28, pane: 'pane-ruptures' }
+);
+
+terrassesLayer.init(map);
+rupturesLayer.init(map);
+
+map.on('moveend', () => { terrassesLayer.onMove(false); rupturesLayer.onMove(false); });
+map.on('zoomend', () => { terrassesLayer.onMove(true);  rupturesLayer.onMove(true);  });
+
+// Préchargement : données vectorielles en arrière-plan + tuiles raster pré-cachées
+map.whenReady(() => {
+    terrassesLayer.preload();
+    rupturesLayer.preload();
+    [probabilites, mntOmbrage, ombrageRaster].forEach(lyr => {
+        lyr.setOpacity(0);
+        lyr.addTo(map);
+    });
+});
+
+const layerMapping = {
+    'layer-communes':     communesPNR,
+    'layer-parcelles':    parcellesPNR,
+    'layer-probabilites': probabilites,
+    'layer-mnt-ombrage':  mntOmbrage,
+    'layer-ombrage':      ombrageRaster,
+};
+
+const vectorLayerMapping = {
+    'layer-terrasses': terrassesLayer,
+    'layer-ruptures':  rupturesLayer,
+};
+
+let layerOrderState = [...LAYER_PANES];
+
+function applyLayerZOrder() {
+    layerOrderState.forEach((entry, i) => {
+        const pane = map.getPane(entry.id);
+        if (pane) pane.style.zIndex = 201 + i;
+    });
+}
+
+function _orderSymbol(paneId) {
+    const colorMap = {
+        'pane-communes':     () => document.getElementById('color-communes')?.value || '#2c3e50',
+        'pane-parcelles':    () => document.getElementById('color-parcelles')?.value || '#f1c40f',
+        'pane-terrasses':    () => document.getElementById('color-terrasses')?.value || '#e74c3c',
+        'pane-ruptures':     () => document.getElementById('color-ruptures')?.value || '#e67e22',
+    };
+    if (paneId === 'pane-probabilites')
+        return '<span class="order-sym" style="width:20px;height:10px;border-radius:3px;background:linear-gradient(90deg,#ffffff,#508c32,#0a3c05);border:1px solid rgba(0,0,0,0.1);"></span>';
+    if (paneId === 'pane-mnt')
+        return '<span class="order-sym" style="width:20px;height:10px;border-radius:3px;background:linear-gradient(90deg,#285023,#c3d76e,#cd7d69,#f5ebe1);border:1px solid rgba(0,0,0,0.1);"></span>';
+    if (paneId === 'pane-ombrage')
+        return '<span class="order-sym" style="width:20px;height:10px;border-radius:3px;background:linear-gradient(90deg,#333,#999,#eee);border:1px solid rgba(0,0,0,0.1);"></span>';
+    if (paneId === 'pane-ruptures') {
+        const c = colorMap[paneId]();
+        return `<span class="order-sym" style="width:20px;height:0;border-bottom:3px solid ${c};"></span>`;
+    }
+    if (colorMap[paneId]) {
+        const c = colorMap[paneId]();
+        const fill = paneId === 'pane-communes' ? 'transparent' : c + '26';
+        return `<span class="order-sym" style="width:14px;height:14px;border-radius:3px;border:2px solid ${c};background:${fill};"></span>`;
+    }
+    return '';
+}
+
+function renderLayerOrderPanel() {
+    const panel = document.getElementById('layer-order-panel');
+    if (!panel) return;
+    panel.innerHTML = '';
+
+    let dragSrcIdx = null;
+
+    [...layerOrderState].reverse().forEach((entry, reversedIdx) => {
+        const realIdx = layerOrderState.length - 1 - reversedIdx;
+        const row = document.createElement('div');
+        row.className = 'layer-order-row';
+        row.draggable = true;
+        row.dataset.realIdx = realIdx;
+        const isTop = reversedIdx === 0;
+        const isBot = reversedIdx === layerOrderState.length - 1;
+        const badge = isTop ? '<span class="layer-order-badge badge-top">▲ haut</span>'
+                    : isBot ? '<span class="layer-order-badge badge-bot">▼ bas</span>'
+                    : '';
+        row.innerHTML = `
+            <i class="fas fa-grip-vertical drag-handle"></i>
+            <span class="layer-order-num">${reversedIdx + 1}</span>
+            ${_orderSymbol(entry.id)}
+            <span class="layer-order-label">${entry.label}</span>
+            ${badge}`;
+
+        row.addEventListener('dragstart', e => {
+            dragSrcIdx = realIdx;
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => row.classList.add('dragging'), 0);
+        });
+        row.addEventListener('dragend', () => {
+            row.classList.remove('dragging');
+            panel.querySelectorAll('.layer-order-row').forEach(r => r.classList.remove('drag-over'));
+        });
+        row.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            panel.querySelectorAll('.layer-order-row').forEach(r => r.classList.remove('drag-over'));
+            if (dragSrcIdx !== realIdx) row.classList.add('drag-over');
+        });
+        row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+        row.addEventListener('drop', e => {
+            e.preventDefault();
+            row.classList.remove('drag-over');
+            if (dragSrcIdx === null || dragSrcIdx === realIdx) return;
+            const item = layerOrderState.splice(dragSrcIdx, 1)[0];
+            const targetIdx = dragSrcIdx < realIdx ? realIdx - 1 : realIdx;
+            layerOrderState.splice(targetIdx, 0, item);
+            applyLayerZOrder();
+            renderLayerOrderPanel();
+        });
+
+        panel.appendChild(row);
+    });
+}
+
+renderLayerOrderPanel();
+
+document.querySelectorAll('.sidebar-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        const pageNum = tab.dataset.page;
+        document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.sidebar-page').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const page = document.getElementById('sidebar-page-' + pageNum);
+        if (page) page.classList.add('active');
+        if (pageNum === '2') renderLayerOrderPanel();
+    });
+});
+
+const rasterPreloadedIds = new Set(['layer-probabilites', 'layer-mnt-ombrage', 'layer-ombrage']);
+Object.keys(layerMapping).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const layer = layerMapping[id];
+    const sliderId = 'slider-' + id.replace('layer-', '').replace('mnt-ombrage', 'mnt') + '-container';
+    const sliderEl = document.getElementById(sliderId);
+    el.addEventListener('change', e => {
+        if (rasterPreloadedIds.has(id)) {
+            // Couche raster pré-ajoutée : toggle par opacité
+            const opKey = id.replace('layer-', '').replace('mnt-ombrage', 'mnt');
+            const slider = document.getElementById('opacity-' + opKey);
+            const op = slider ? parseInt(slider.value) / 100 : 1;
+            layer.setOpacity(e.target.checked ? op : 0);
+        } else {
+            if (e.target.checked) {
+                map.addLayer(layer);
+            } else {
+                if (map.hasLayer(layer)) map.removeLayer(layer);
+            }
+        }
+        if (sliderEl) sliderEl.style.display = e.target.checked ? 'flex' : 'none';
+        updateFloatingLegend();
+    });
+});
+
+Object.entries(vectorLayerMapping).forEach(([id, vl]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const sliderId = 'slider-' + id.replace('layer-', '') + '-container';
+    const sliderEl = document.getElementById(sliderId);
+    el.addEventListener('change', e => {
+        if (e.target.checked) {
+            vl.enable();
+            if (sliderEl) sliderEl.style.display = 'flex';
+        } else {
+            vl.disable();
+            if (sliderEl) sliderEl.style.display = 'none';
+        }
+        updateFloatingLegend();
+    });
+});
+
+['probabilites', 'mnt', 'ombrage'].forEach(key => {
+    const slider = document.getElementById('opacity-' + key);
+    if (!slider) return;
+    slider.addEventListener('input', e => {
+        const opacity = parseInt(e.target.value) / 100;
+        const lyrId = key === 'mnt' ? 'layer-mnt-ombrage' : 'layer-' + key;
+        layerMapping[lyrId]?.setOpacity(opacity);
+    });
+});
+
+const sliderTerrasses = document.getElementById('opacity-terrasses');
+if (sliderTerrasses) {
+    sliderTerrasses.addEventListener('input', e => {
+        const op = parseInt(e.target.value) / 100;
+        terrassesLayer.setStyle({ opacity: op, fillOpacity: op * 0.5 });
+    });
+}
+
+const sliderRuptures = document.getElementById('opacity-ruptures');
+if (sliderRuptures) {
+    sliderRuptures.addEventListener('input', e => {
+        const op = parseInt(e.target.value) / 100;
+        rupturesLayer.setStyle({ opacity: op });
+    });
+}
+
+const colorCommunes = document.getElementById('color-communes');
+if (colorCommunes) {
+    colorCommunes.addEventListener('input', e => {
+        const c = e.target.value;
+        communesPNR.setStyle({ color: c });
+        const sw = document.getElementById('legend-swatch-communes');
+        if (sw) sw.style.borderColor = c;
+        updateFloatingLegend();
+    });
+}
+
+const colorParcelles = document.getElementById('color-parcelles');
+if (colorParcelles) {
+    colorParcelles.addEventListener('input', e => {
+        const c = e.target.value;
+        parcellesPNR.eachLayer(vg => {
+            vg.options.vectorTileLayerStyles.sliced.fillColor = c;
+            vg.options.vectorTileLayerStyles.sliced.color = c;
+            vg.redraw();
+        });
+        const sw = document.getElementById('legend-swatch-parcelles');
+        if (sw) { sw.style.borderColor = c; sw.style.background = c + '26'; }
+        updateFloatingLegend();
+    });
+}
+
+const colorTerrasses = document.getElementById('color-terrasses');
+if (colorTerrasses) {
+    colorTerrasses.addEventListener('input', e => {
+        const c = e.target.value;
+        const op = parseInt(document.getElementById('opacity-terrasses')?.value ?? 90) / 100;
+        terrassesLayer.setStyle({ color: c, fillColor: c, opacity: op, fillOpacity: op * 0.5 });
+        terrassesLayer.setClusterColor(c);
+        const sw = document.getElementById('legend-swatch-terrasses');
+        if (sw) { sw.style.borderColor = c; sw.style.background = c + '66'; }
+        updateFloatingLegend();
+    });
+}
+
+const colorRuptures = document.getElementById('color-ruptures');
+if (colorRuptures) {
+    colorRuptures.addEventListener('input', e => {
+        const c = e.target.value;
+        const op = parseInt(document.getElementById('opacity-ruptures')?.value ?? 90) / 100;
+        rupturesLayer.setStyle({ color: c, opacity: op });
+        rupturesLayer.setClusterColor(c);
+        const sw = document.getElementById('legend-swatch-ruptures');
+        if (sw) sw.style.borderBottom = '3px solid ' + c;
+        updateFloatingLegend();
+    });
+}
+
+const modalOverlay = document.getElementById('info-modal');
+const modalClose = document.getElementById('modal-close');
+const btnInfo = document.getElementById('btn-info-footer');
+
+function openModal() {
+    if (modalOverlay) modalOverlay.classList.add('active');
+}
+
+function closeModal() {
+    if (modalOverlay) modalOverlay.classList.remove('active');
+}
+
+if (btnInfo) btnInfo.addEventListener('click', openModal);
+if (modalClose) modalClose.addEventListener('click', closeModal);
+if (modalOverlay) {
+    modalOverlay.addEventListener('click', (event) => {
+        if (event.target === modalOverlay) closeModal();
+    });
+}
+
+const header = document.querySelector('.main-header');
+const headerToggle = document.getElementById('header-toggle');
+const revealHeader = document.createElement('button');
+revealHeader.id = 'reveal-header';
+revealHeader.className = 'reveal-btn';
+revealHeader.innerHTML = '<i class="fas fa-chevron-down"></i>';
+revealHeader.title = 'Afficher le header';
+document.querySelector('.map-wrapper').appendChild(revealHeader);
+
+if (headerToggle && header) {
+    headerToggle.addEventListener('click', () => {
+        header.classList.add('collapsed');
+        revealHeader.style.display = 'flex';
+        setTimeout(() => map.invalidateSize(), 400);
+    });
+}
+
+revealHeader.addEventListener('click', () => {
+    header.classList.remove('collapsed');
+    revealHeader.style.display = 'none';
+    setTimeout(() => map.invalidateSize(), 400);
+});
+
+const footer = document.querySelector('.main-footer');
+const footerToggle = document.getElementById('footer-toggle');
+const revealFooter = document.createElement('button');
+revealFooter.id = 'reveal-footer';
+revealFooter.className = 'reveal-btn';
+revealFooter.innerHTML = '<i class="fas fa-chevron-up"></i>';
+revealFooter.title = 'Afficher le footer';
+document.querySelector('.map-wrapper').appendChild(revealFooter);
+
+if (footerToggle && footer) {
+    footerToggle.addEventListener('click', () => {
+        footer.classList.add('collapsed');
+        revealFooter.style.display = 'flex';
+        setTimeout(() => map.invalidateSize(), 400);
+    });
+}
+
+revealFooter.addEventListener('click', () => {
+    footer.classList.remove('collapsed');
+    revealFooter.style.display = 'none';
+    setTimeout(() => map.invalidateSize(), 400);
+});
+
+const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebar = document.querySelector('.sidebar');
+
+const sidebarBackdrop = document.createElement('div');
+sidebarBackdrop.className = 'sidebar-backdrop';
+document.querySelector('.map-wrapper')?.appendChild(sidebarBackdrop);
+
+const sidebarCloseMobile = document.createElement('button');
+sidebarCloseMobile.className = 'sidebar-close-mobile';
+sidebarCloseMobile.innerHTML = '<i class="fas fa-times"></i>';
+sidebar?.querySelector('.sidebar-header')?.appendChild(sidebarCloseMobile);
+
+function closeSidebar() {
+    if (!sidebar || !sidebarToggle) return;
+    sidebar.classList.add('collapsed');
+    sidebarToggle.classList.add('collapsed');
+    const icon = sidebarToggle.querySelector('i');
+    if (icon) icon.classList.replace('fa-chevron-left', 'fa-chevron-right');
+    sidebarToggle.title = 'Afficher le panneau';
+    map.getContainer().classList.add('sidebar-collapsed-map');
+    sidebarBackdrop.classList.remove('active');
+    setTimeout(() => map.invalidateSize(), 400);
+}
+
+function openSidebar() {
+    if (!sidebar || !sidebarToggle) return;
+    sidebar.classList.remove('collapsed');
+    sidebarToggle.classList.remove('collapsed');
+    const icon = sidebarToggle.querySelector('i');
+    if (icon) icon.classList.replace('fa-chevron-right', 'fa-chevron-left');
+    sidebarToggle.title = 'Masquer le panneau';
+    map.getContainer().classList.remove('sidebar-collapsed-map');
+    if (window.innerWidth <= 768) sidebarBackdrop.classList.add('active');
+    setTimeout(() => map.invalidateSize(), 400);
+}
+
+if (sidebarToggle && sidebar) {
+    sidebarToggle.addEventListener('click', () => {
+        if (sidebar.classList.contains('collapsed')) openSidebar();
+        else closeSidebar();
+    });
+}
+sidebarCloseMobile.addEventListener('click', closeSidebar);
+sidebarBackdrop.addEventListener('click', closeSidebar);
+
+if (window.innerWidth <= 768 && sidebar) {
+    sidebar.classList.add('collapsed');
+    if (sidebarToggle) {
+        sidebarToggle.classList.add('collapsed');
+        const icon = sidebarToggle.querySelector('i');
+        if (icon) icon.classList.replace('fa-chevron-left', 'fa-chevron-right');
+    }
+    map.getContainer().classList.add('sidebar-collapsed-map');
+}
+
+if (window.innerWidth <= 768) {
+    const toolbar = document.querySelector('.map-toolbar');
+    if (toolbar) {
+        document.querySelector('.map-wrapper')?.appendChild(toolbar);
+    }
+}
+
+updateFloatingLegend();
