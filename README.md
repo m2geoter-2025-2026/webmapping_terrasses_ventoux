@@ -35,48 +35,72 @@ Les ruptures de pentes (murs de soutènement en pierre sèche) ont été détect
 | Ruptures de pentes (MSRM) | Lignes | ArcGIS FeatureServer |
 | Modèle Numérique de Terrain | Raster | ArcGIS Tile Server |
 | Ombrage (Hillshade) | Raster | ArcGIS Tile Server |
+| Emprise du PNR | Polygone | GeoJSON local |
 | Communes du PNR | Polygones | GeoJSON local |
+| Zone d'étude (communes) | Polygones | GeoJSON local |
 | Registres parcellaires | Polygones | GeoJSON local (VectorGrid) |
 
 **Sources :** LiDAR HD et BD ORTHO IRC 2024 — [IGN Geoplateforme](https://geoservices.ign.fr/)
 
 ## Fonctionnalités du Web SIG
 
-- **Gestion des couches** : activation/désactivation, opacité ajustable, couleur personnalisable
-- **Ordre des calques** : réorganisation par glisser-déposer
-- **Clusters adaptatifs** : regroupement dynamique avec compteur (zoom < 14), géométries réelles (zoom ≥ 14)
-- **Outils de mesure** : distance, surface, coordonnées au clic, localisation GPS
-- **Barre de coordonnées** : affichage temps réel de la position et du niveau de zoom
-- **Profil altimétrique** : coupe topographique interactive via l'API Géoplateforme IGN (axe X en km réels)
-- **3 fonds de carte** : Google Satellite (défaut), Esri Light, OpenStreetMap — couleurs des limites administratives adaptées automatiquement à chaque fond
+### Panneau de contrôle (sidebar)
+- **Onglet Couches** : activation/désactivation, opacité ajustable par curseur, couleur personnalisable par couche
+- **Onglet Ordre** : réorganisation des calques par glisser-déposer
+- **Recherche de commune** : centrage automatique sur la commune sélectionnée
+- **Vue comparateur** : séparateur glissable divisant la carte en deux fonds de plan indépendants avec couleurs des limites administratives adaptées à chaque côté
+
+### Visualisation
+- **3 fonds de carte** : Google Satellite (défaut), Esri Light, OpenStreetMap — transition fluide par fondu
 - **Légende dynamique** : swatches synchronisés avec le fond de carte actif
-- **Export PNG** de la vue carte
-- **Interface responsive** : mobile (toolbar fixe, espacement optimisé), tablette et desktop
-- **Repli du header/footer** : maximisation de la zone carte en un clic
+- **Mode sombre** : bascule via le bouton boussole ou la touche `N`
+- **Mini-carte** : aperçu de la zone visible (coin inférieur droit)
+- **Clusters adaptatifs** : regroupement dynamique avec compteur (zoom < 14), géométries réelles (zoom ≥ 14)
+
+### Outils
+- **Mesure de distance** : tracé polylignes avec affichage en temps réel
+- **Mesure de surface** : tracé polygone avec calcul automatique
+- **Coordonnées au clic** : affichage WGS 84 et copie presse-papiers
+- **Barre de coordonnées** : position et niveau de zoom en temps réel (bas de carte)
+- **Localisation GPS** : centrage sur la position de l'utilisateur
+- **Profil altimétrique** : coupe topographique interactive via l'API Géoplateforme IGN (axe X en km réels)
+- **Export PNG** : capture de la vue carte
+- **Export GeoJSON** : téléchargement des terrasses visibles dans l'emprise courante
+- **Plein écran** : affichage immersif
+- **Repli du header/footer** : maximisation de la zone carte
 
 ## Raccourcis clavier
 
 | Touche | Action |
 |--------|--------|
+| `H` | Recentrer sur l'emprise du PNR |
 | `D` | Outil distance |
 | `S` | Outil surface |
-| `X` | Outil coordonnées |
+| `X` | Outil coordonnées au clic |
 | `L` | Localisation GPS |
 | `F` | Plein écran |
-| `P` | Export PNG |
-| `Échap` | Annuler l'outil actif |
+| `G` | Export GeoJSON des terrasses visibles |
+| `C` | Export PNG |
+| `R` | Activer/désactiver la couche Ruptures de pentes |
+| `N` | Basculer mode sombre |
+| `Échap` | Annuler l'outil actif / revenir à la navigation |
 
 ## Structure du projet
 
 ```
 .
-├── index.html          # Page principale
-├── script.js           # Logique applicative (Leaflet + ArcGIS)
-├── styles.css          # Feuille de styles
+├── index.html                    # Page principale
+├── script.js                     # Logique applicative (Leaflet + ArcGIS)
+├── styles.css                    # Feuille de styles
 ├── data/
 │   ├── Emprise_PNR.geojson
 │   ├── Communes_PNR.geojson
-│   └── Parcelles_PNR.geojson
+│   ├── Communes_Zone_etude.geojson
+│   ├── Parcelles_PNR.geojson
+│   ├── Communes_PNR.gpkg
+│   ├── Communes_Zone_etude.gpkg
+│   ├── Emprise_PNR.qmd
+│   └── Parcelles_PNR.qmd
 ├── media/
 │   ├── LogoPNR.png / .jpg
 │   ├── LogoUA.png / .jpeg
@@ -86,16 +110,18 @@ Les ruptures de pentes (murs de soutènement en pierre sèche) ont été détect
 
 ## Technologies
 
-- **Leaflet** 1.9.4 + plugins (MiniMap, VectorGrid, MarkerCluster)
-- **Turf.js** 6 (analyse spatiale côté client)
+- **Leaflet** 1.9.4 + plugins : MiniMap, VectorGrid, MarkerCluster
+- **Turf.js** 6 (analyse spatiale côté client : booleanPointInPolygon, length, area)
 - **Chart.js** (profil altimétrique)
 - **html2canvas** (export PNG)
+- **API Géoplateforme IGN** — altimétrie (`data.geopf.fr/altimetrie`)
+- **ArcGIS FeatureServer / Tile Server** (couches terrasses, probabilités, MNT)
 - **Font Awesome** 6.5.1
 - **Polices** : Inter (corps), Lora (titres)
 
 ## Système de référence
 
-EPSG:4326 - WGS 84
+EPSG:4326 — WGS 84
 
 ## Licence
 
