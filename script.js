@@ -1799,7 +1799,7 @@ const terrassesLayer = new ClusteredArcGISLayer(
 );
 
 const rupturesLayer = new ClusteredArcGISLayer(
-    'https://services5.arcgis.com/y9Ov7ybbaxLMONwL/arcgis/rest/services/ruptures_squelette/FeatureServer/0/query',
+    'https://services5.arcgis.com/y9Ov7ybbaxLMONwL/arcgis/rest/services/Rupture_pentes_pnr/FeatureServer/0/query',
     { color: '#ffaf01', weight: 2, opacity: 0.9, fillOpacity: 0 },
     { debounce: 400, label: 'Ruptures de pentes', clusterHue: 41, pane: 'pane-ruptures' }
 );
