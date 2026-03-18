@@ -1,5 +1,6 @@
-const map = L.map('map', {
-    zoomControl: true,
+﻿const map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false,
     minZoom: 9,
     maxZoom: 19,
     bounceAtZoomLimits: false,
@@ -9,14 +10,17 @@ const map = L.map('map', {
     wheelDebounceTime: 60
 }).setView([44.17, 5.28], 12);
 
+L.control.zoom({ position: 'topleft' }).addTo(map);
+
 const LAYER_PANES = [
-    { id: 'pane-ombrage',      label: 'Ombrage',                                  z: 201 },
-    { id: 'pane-mnt',          label: 'Modèle Numérique de Terrain',              z: 202 },
-    { id: 'pane-probabilites', label: 'Probabilité d\'occurrence des terrasses',  z: 203 },
-    { id: 'pane-communes',     label: 'Communes du PNR',                          z: 204 },
-    { id: 'pane-parcelles',    label: 'Parcellaire',                              z: 205 },
-    { id: 'pane-terrasses',    label: 'Terrasses',                                z: 206 },
-    { id: 'pane-ruptures',     label: 'Ruptures de pentes',                       z: 207 },
+    { id: 'pane-ombrage', label: 'Ombrage', z: 201 },
+    { id: 'pane-mnt', label: 'Mod├¿le Num├®rique de Terrain', z: 202 },
+    { id: 'pane-probabilites', label: 'Probabilit├® d\'occurrence des terrasses', z: 203 },
+    { id: 'pane-communes', label: 'Communes du PNR', z: 204 },
+    { id: 'pane-parcelles', label: 'Parcellaire', z: 205 },
+    { id: 'pane-terrasses', label: 'Terrasses', z: 206 },
+    { id: 'pane-ruptures', label: 'Ruptures de pentes', z: 207 },
+    { id: 'pane-emprise', label: 'Emprise PNR', z: 208 },
 ];
 LAYER_PANES.forEach(({ id, z }) => {
     const pane = map.createPane(id);
@@ -29,15 +33,15 @@ comparePane.style.pointerEvents = 'none';
 map.getPane('pane-terrasses').style.pointerEvents = 'auto';
 
 (function initSplashProgress() {
-    const fill   = document.getElementById('splash-progress-fill');
-    const pct    = document.getElementById('splash-progress-pct');
+    const fill = document.getElementById('splash-progress-fill');
+    const pct = document.getElementById('splash-progress-pct');
     const status = document.getElementById('splash-progress-status');
     let _cur = 0;
 
     function setProgress(p, msg) {
         _cur = Math.max(_cur, Math.min(100, p));
-        if (fill)   fill.style.width = _cur + '%';
-        if (pct)    pct.textContent  = Math.round(_cur) + ' %';
+        if (fill) fill.style.width = _cur + '%';
+        if (pct) pct.textContent = Math.round(_cur) + ' %';
         if (status && msg) status.textContent = msg;
     }
 
@@ -55,7 +59,7 @@ map.getPane('pane-terrasses').style.pointerEvents = 'auto';
         }, 350);
     }
 
-    setProgress(8, 'Initialisation de la carte…');
+    setProgress(8, 'Initialisation de la carte...');
 
     const t0 = Date.now();
     function tick() {
@@ -68,7 +72,7 @@ map.getPane('pane-terrasses').style.pointerEvents = 'auto';
     requestAnimationFrame(tick);
 
     window.addEventListener('load', () => {
-        setProgress(92, 'Finalisation…');
+        setProgress(92, 'Finalisation...');
         setTimeout(hideSplash, 600);
     });
 
@@ -108,10 +112,25 @@ const NorthArrow = L.Control.extend({
     onAdd: function () {
         const c = L.DomUtil.create('div', 'gm-compass');
         L.DomEvent.disableClickPropagation(c);
+        c.style.background = 'rgba(255,255,255,0.92)';
+        c.style.backdropFilter = 'blur(8px)';
+        c.style.borderRadius = '10px';
+        c.style.padding = '6px 6px 2px';
+        c.style.border = '1px solid rgba(0,0,0,0.1)';
+        c.style.boxShadow = '0 4px 14px rgba(0,0,0,0.15)';
+        c.style.display = 'flex';
+        c.style.flexDirection = 'column';
+        c.style.alignItems = 'center';
         c.innerHTML = '<svg viewBox="0 0 40 60" width="30" height="45" style="filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.3));">' +
             '<path d="M20 0 L40 40 L20 30 L0 40 Z" fill="#1e6b45" stroke="#ffffff" stroke-width="2"/>' +
             '<text x="20" y="56" text-anchor="middle" font-size="16" font-weight="bold" fill="#1e6b45" font-family="sans-serif">N</text>' +
             '</svg>';
+
+        const darkBtn = L.DomUtil.create('button', 'tool-btn dark-btn-north', c);
+        darkBtn.id = 'tool-dark';
+        darkBtn.title = 'Mode sombre (N)';
+        darkBtn.innerHTML = '<i class="fas fa-moon"></i>';
+
         return c;
     }
 });
@@ -124,16 +143,17 @@ const Toolbar = L.Control.extend({
         L.DomEvent.disableClickPropagation(bar);
         L.DomEvent.disableScrollPropagation(bar);
         bar.innerHTML =
-            '<button id="tool-home"       class="tool-btn" title="Accueil – recentrer (H)"><i class="fas fa-home"></i><span class="tool-label">Accueil</span></button>' +
+            '<button id="tool-home"       class="tool-btn" title="Accueil \u2013 recentrer (H)"><i class="fas fa-home"></i><span class="tool-label">Accueil</span></button>' +
             '<div class="toolbar-sep"></div>' +
             '<button id="tool-distance"   class="tool-btn" title="Mesure de distance (D)"><i class="fas fa-ruler"></i><span class="tool-label">Distance</span></button>' +
             '<button id="tool-area"       class="tool-btn" title="Mesure de surface (S)"><i class="fas fa-draw-polygon"></i><span class="tool-label">Surface</span></button>' +
-            '<button id="tool-coords"     class="tool-btn" title="Coordonnées au clic (X)"><i class="fas fa-crosshairs"></i><span class="tool-label">Coordonnées</span></button>' +
+            '<button id="tool-coords"     class="tool-btn" title="Coordonn\u00e9es au clic (X)"><i class="fas fa-crosshairs"></i><span class="tool-label">Coordonn\u00e9es</span></button>' +
             '<div class="toolbar-sep"></div>' +
             '<button id="tool-locate"     class="tool-btn" title="Ma position GPS (L)"><i class="fas fa-location-dot"></i><span class="tool-label">Ma position</span></button>' +
-            '<button id="tool-fullscreen" class="tool-btn" title="Plein écran (F)"><i class="fas fa-expand"></i><span class="tool-label">Plein écran</span></button>' +
-            '<button id="tool-export"     class="tool-btn" title="Capture PNG (C)"><i class="fas fa-camera"></i><span class="tool-label">Capture</span></button>' +
-            '<button id="tool-geojson"    class="tool-btn" title="Exporter les terrasses visibles (G)"><i class="fas fa-file-export"></i><span class="tool-label">Export Terrasses</span></button>';
+            '<button id="tool-fullscreen" class="tool-btn" title="Plein \u00e9cran (F)"><i class="fas fa-expand"></i><span class="tool-label">Plein \u00e9cran</span></button>' +
+            '<button id="tool-geojson"    class="tool-btn" title="Exporter les terrasses visibles (G)"><i class="fas fa-file-export"></i><span class="tool-label">Export Terrasses</span></button>' +
+            '<div class="toolbar-sep toolbar-sep--bottom"></div>' +
+            '<button id="tool-hand"       class="tool-btn tool-btn--hand active" title="Navigation \u2013 d\u00e9placer la carte (\u00c9chap)"><i class="fas fa-hand"></i><span class="tool-label">Navigation</span></button>';
         return bar;
     }
 });
@@ -186,11 +206,11 @@ function updateFloatingLegend() {
     const layerMnt = document.getElementById('layer-mnt-ombrage');
     const layerOmbrage = document.getElementById('layer-ombrage');
     if (layerTerrasses?.checked) {
-        const c = document.getElementById('color-terrasses')?.value || '#e74c3c';
+        const c = document.getElementById('color-terrasses')?.value || '#1aff01';
         items.push({ style: 'background:' + c + '66;border:2px solid ' + c + ';border-radius:2px;', label: 'Terrasses' });
     }
     if (layerRuptures?.checked) {
-        const c = document.getElementById('color-ruptures')?.value || '#e67e22';
+        const c = document.getElementById('color-ruptures')?.value || '#ffaf01';
         items.push({ style: 'height:0;border-bottom:3px solid ' + c + ';', label: 'Ruptures de pentes' });
     }
     if (layerProba?.checked) {
@@ -293,6 +313,7 @@ function deactivateTool() {
     map.off('mousemove', onMeasureMove);
     map.off('click', onCoordsClick);
     activeTool = null;
+    document.getElementById('tool-hand')?.classList.add('active');
 }
 
 function setActiveTool(name) {
@@ -300,6 +321,7 @@ function setActiveTool(name) {
     deactivateTool();
     if (name === 'distance' || name === 'area') clearMeasure();
     activeTool = name;
+    document.getElementById('tool-hand')?.classList.remove('active');
     document.getElementById('tool-' + name)?.classList.add('active');
     if (name === 'distance') map.getContainer().classList.add('cursor-distance');
     else if (name === 'area') map.getContainer().classList.add('cursor-area');
@@ -424,6 +446,42 @@ document.addEventListener('keydown', function (e) {
         if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); }
     }
     if (key === 'g') document.getElementById('tool-geojson')?.click();
+    if (key === 'n') document.getElementById('tool-dark')?.click();
+    if (key === 'escape' || e.key === 'Escape') document.getElementById('tool-hand')?.click();
+});
+
+// ── Bouton navigation (main) ──────────────────────────────────
+document.getElementById('tool-hand')?.addEventListener('click', function () {
+    deactivateTool();
+    clearMeasure();
+    toolInfo.hide();
+});
+
+// ── Mode sombre ───────────────────────────────────────────────
+(function initDarkMode() {
+    const saved = localStorage.getItem('pnr-theme');
+    if (saved === 'dark') applyDarkMode(true, false);
+})();
+
+function applyDarkMode(enable, save = true) {
+    const html = document.documentElement;
+    const btn = document.getElementById('tool-dark');
+    const tilePanes = document.querySelectorAll('.leaflet-tile-pane, .leaflet-overlay-pane');
+    if (enable) {
+        html.setAttribute('data-theme', 'dark');
+        if (btn) { btn.querySelector('i').className = 'fas fa-sun'; btn.title = 'Mode jour (N)'; }
+        tilePanes.forEach(p => { p.style.filter = 'invert(90%) hue-rotate(180deg) brightness(0.8) saturate(1.3)'; });
+    } else {
+        html.removeAttribute('data-theme');
+        if (btn) { btn.querySelector('i').className = 'fas fa-moon'; btn.title = 'Mode sombre (N)'; }
+        tilePanes.forEach(p => { p.style.filter = ''; });
+    }
+    if (save) localStorage.setItem('pnr-theme', enable ? 'dark' : 'light');
+}
+
+document.getElementById('tool-dark')?.addEventListener('click', function () {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    applyDarkMode(!isDark);
 });
 
 function formatDistance(meters) {
@@ -693,31 +751,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    document.getElementById('tool-export')?.addEventListener('click', function () {
-        deactivateTool();
-        const btn = this;
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Capture...</span>';
-        toolInfo.show('<i class="fas fa-camera"></i> Génération de l\'image...');
-        document.querySelectorAll('.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom').forEach(el => el.style.opacity = '0');
-        setTimeout(() => {
-            const mapEl = document.getElementById('map');
-            html2canvas(mapEl, { useCORS: true, allowTaint: true }).then(function (canvas) {
-                document.querySelectorAll('.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom').forEach(el => el.style.opacity = '1');
-                const fileName = 'Carte_PNR_du-Mont-Ventoux_' + new Date().toISOString().slice(0, 10) + '.png';
-                downloadToFile(canvas.toDataURL(), fileName);
-                btn.innerHTML = originalHTML;
-                toolInfo.show('<i class="fas fa-check" style="color:#27ae60"></i> Carte envoyée vers votre dossier <b>Téléchargements</b> !');
-                setTimeout(function () { toolInfo.hide(); }, 5000);
-            }).catch(function () {
-                document.querySelectorAll('.leaflet-control-container .leaflet-top, .leaflet-control-container .leaflet-bottom').forEach(el => el.style.opacity = '1');
-                btn.innerHTML = originalHTML;
-                toolInfo.show('<i class="fas fa-exclamation-triangle" style="color:#e74c3c"></i> Erreur lors de l\'export');
-                setTimeout(function () { toolInfo.hide(); }, 3000);
-            });
-        }, 300);
-    });
-
     document.getElementById('compare-toggle')?.addEventListener('change', function () {
         if (this.checked) { enableCompare(); } else { disableCompare(); }
     });
@@ -744,16 +777,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
 const BASEMAP_STYLES = {
     satellite: {
-        emprise:  { color: '#ffffff', weight: 3.5, opacity: 1, dashArray: null  },
-        communes: { color: '#38bdf8', weight: 2,   opacity: 1, dashArray: '8,5' }
+        emprise: { color: '#ffffff', weight: 3.5, opacity: 1, dashArray: null },
+        communes: { color: '#38bdf8', weight: 2, opacity: 1, dashArray: '8,5' }
     },
     esriLight: {
-        emprise:  { color: '#7b1fa2', weight: 4,   opacity: 1, dashArray: null  },
-        communes: { color: '#0d47a1', weight: 2,   opacity: 1, dashArray: '6,5' }
+        emprise: { color: '#7b1fa2', weight: 4, opacity: 1, dashArray: null },
+        communes: { color: '#0d47a1', weight: 2, opacity: 1, dashArray: '6,5' }
     },
     osm: {
-        emprise:  { color: '#004d40', weight: 3.5, opacity: 1, dashArray: null  },
-        communes: { color: '#880e4f', weight: 2,   opacity: 1, dashArray: '6,5' }
+        emprise: { color: '#004d40', weight: 3.5, opacity: 1, dashArray: null },
+        communes: { color: '#880e4f', weight: 2, opacity: 1, dashArray: '6,5' }
     }
 };
 
@@ -766,44 +799,47 @@ function applyBasemapStyles(key) {
     const s = BASEMAP_STYLES[key] || BASEMAP_STYLES.satellite;
 
     emprisePNR.setStyle({
-        color:     s.emprise.color,
-        weight:    s.emprise.weight,
-        opacity:   s.emprise.opacity,
+        color: s.emprise.color,
+        weight: s.emprise.weight,
+        opacity: s.emprise.opacity,
         dashArray: s.emprise.dashArray || null
     });
 
     const cStyle = {
-        color:     s.communes.color,
-        weight:    s.communes.weight,
-        opacity:   s.communes.opacity,
+        color: s.communes.color,
+        weight: s.communes.weight,
+        opacity: s.communes.opacity,
         dashArray: s.communes.dashArray
     };
     communesPNR.setStyle(cStyle);
 
-    const picker  = document.getElementById('color-communes');
+    const picker = document.getElementById('color-communes');
     const swatchC = document.getElementById('legend-swatch-communes');
     const swatchE = document.getElementById('legend-swatch-emprise');
-    if (picker)  picker.value = s.communes.color;
+    if (picker) picker.value = s.communes.color;
     if (swatchC) swatchC.style.borderBottom = `2px dashed ${s.communes.color}`;
-    if (swatchE) swatchE.style.borderBottom  = `3px solid ${s.emprise.color}`;
+    if (swatchE) swatchE.style.borderBottom = `3px solid ${s.emprise.color}`;
 }
 
 const BASEMAP_TILES = {
-    osm:        (pane) => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19, pane: pane || undefined }),
-    satellite:  (pane) => L.tileLayer('http://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { attribution: 'Map data &copy; Google Satellite', maxZoom: 20, pane: pane || undefined }),
-    esriLight:  (pane) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri', maxZoom: 16, pane: pane || undefined })
+    osm: (pane) => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { crossOrigin: 'anonymous', attribution: '&copy; OpenStreetMap contributors', maxZoom: 19, pane: pane || undefined }),
+    satellite: (pane) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { crossOrigin: 'anonymous', attribution: 'Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community', maxZoom: 20, pane: pane || undefined }),
+    esriLight: (pane) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { crossOrigin: 'anonymous', attribution: 'Tiles &copy; Esri', maxZoom: 16, pane: pane || undefined })
 };
 
 const basemaps = {
     osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        crossOrigin: 'anonymous',
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19
     }),
-    satellite: L.tileLayer('http://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-        attribution: 'Map data &copy; Google Satellite',
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        crossOrigin: 'anonymous',
+        attribution: 'Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
         maxZoom: 20
     }),
     esriLight: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        crossOrigin: 'anonymous',
         attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
         maxZoom: 16
     })
@@ -817,13 +853,13 @@ basemaps.satellite.once('load', () => {
 
 const CMP_LABELS = { satellite: 'Satellite', esriLight: 'Esri Light', osm: 'OSM' };
 const CMP_DATA_PANES = [
-    { key: 'terrasses',    pane: 'pane-terrasses',    label: 'Terrasses',          checkId: 'layer-terrasses' },
-    { key: 'ruptures',     pane: 'pane-ruptures',     label: 'Ruptures de pentes', checkId: 'layer-ruptures' },
-    { key: 'probabilites', pane: 'pane-probabilites', label: 'Probabilite',        checkId: 'layer-probabilites' },
-    { key: 'mnt',          pane: 'pane-mnt',          label: 'MNT',               checkId: 'layer-mnt-ombrage' },
-    { key: 'ombrage',      pane: 'pane-ombrage',      label: 'Ombrage',            checkId: 'layer-ombrage' },
-    { key: 'communes',     pane: 'pane-communes',     label: 'Communes',           checkId: 'layer-communes' },
-    { key: 'parcelles',    pane: 'pane-parcelles',    label: 'Parcellaire',        checkId: 'layer-parcelles' },
+    { key: 'terrasses', pane: 'pane-terrasses', label: 'Terrasses', checkId: 'layer-terrasses' },
+    { key: 'ruptures', pane: 'pane-ruptures', label: 'Ruptures de pentes', checkId: 'layer-ruptures' },
+    { key: 'probabilites', pane: 'pane-probabilites', label: 'Probabilite', checkId: 'layer-probabilites' },
+    { key: 'mnt', pane: 'pane-mnt', label: 'MNT', checkId: 'layer-mnt-ombrage' },
+    { key: 'ombrage', pane: 'pane-ombrage', label: 'Ombrage', checkId: 'layer-ombrage' },
+    { key: 'communes', pane: 'pane-communes', label: 'Communes', checkId: 'layer-communes' },
+    { key: 'parcelles', pane: 'pane-parcelles', label: 'Parcellaire', checkId: 'layer-parcelles' },
 ];
 let compareActive = false;
 let compareLeftLayer = null;
@@ -832,6 +868,18 @@ let compareRightKey = 'satellite';
 let compareDivX = 0.5;
 let compareDivEl = null;
 let cmpLayerSides = Object.fromEntries(CMP_DATA_PANES.map(d => [d.key, 'both']));
+let communesCmpLeft = null;
+let empriseCmpLeft = null;
+
+function _makeCmpLeftPane(id, z) {
+    if (!map.getPane(id)) {
+        const p = map.createPane(id);
+        p.style.zIndex = z;
+        p.style.pointerEvents = 'none';
+    }
+}
+function _cmpStyleCommunes(key) { return { ...BASEMAP_STYLES[key].communes, fillColor: '#ffffff', fillOpacity: 0 }; }
+function _cmpStyleEmprise(key) { return { ...BASEMAP_STYLES[key].emprise, fillColor: 'transparent' }; }
 
 function _setClip(el, side, nw, se, clipX) {
     if (!el) return;
@@ -857,12 +905,26 @@ function _applyCompareClip() {
     CMP_DATA_PANES.forEach(({ key, pane: paneName }) => {
         _setClip(map.getPane(paneName), cmpLayerSides[key], nw, se, clipX);
     });
+    // Emprise: original = droite, copie = gauche
+    _setClip(map.getPane('pane-emprise'), 'right', nw, se, clipX);
+    if (empriseCmpLeft) _setClip(map.getPane('pane-emprise-cmp-left'), 'left', nw, se, clipX);
+    // Communes copie gauche : visible à gauche sauf si l'utilisateur a choisi "droite uniquement"
+    if (communesCmpLeft) {
+        const leftPane = map.getPane('pane-communes-cmp-left');
+        const communesSide = cmpLayerSides['communes'];
+        if (communesSide === 'right' || !map.hasLayer(communesPNR)) {
+            leftPane.style.display = 'none';
+        } else {
+            leftPane.style.display = '';
+            _setClip(leftPane, 'left', nw, se, clipX);
+        }
+    }
 }
 
 function _clearAllClips() {
-    ['pane-compare', ...CMP_DATA_PANES.map(d => d.pane)].forEach(name => {
+    ['pane-compare', 'pane-emprise', 'pane-communes-cmp-left', 'pane-emprise-cmp-left', ...CMP_DATA_PANES.map(d => d.pane)].forEach(name => {
         const p = map.getPane(name);
-        if (p) { p.style.clip = ''; p.style.clipPath = ''; }
+        if (p) { p.style.clip = ''; p.style.clipPath = ''; p.style.display = ''; }
     });
 }
 
@@ -879,7 +941,7 @@ function _buildCompareSidebarContent() {
     const layerRows = CMP_DATA_PANES.map(({ key, label, checkId }) => {
         const chk = document.getElementById(checkId);
         const active = chk && chk.checked;
-        const isLeft  = cmpLayerSides[key] !== 'right';
+        const isLeft = cmpLayerSides[key] !== 'right';
         const isRight = cmpLayerSides[key] !== 'left';
         return `<tr${active ? '' : ' class="cmp-row-inactive"'} data-layer-row="${key}">
             <td class="cmp-td-name">${label}</td>
@@ -897,6 +959,8 @@ function _buildCompareSidebarContent() {
                 </tr>
             </thead>
             <tbody>
+                <tr class="cmp-section-row"><td colspan="3">Couches</td></tr>
+                ${layerRows}
                 <tr class="cmp-section-row"><td colspan="3">Fond de carte</td></tr>
                 ${Object.entries(CMP_LABELS).map(([k, v]) => `
                 <tr>
@@ -904,8 +968,6 @@ function _buildCompareSidebarContent() {
                     <td class="cmp-td-check"><input type="radio" name="cmp-bm-left" value="${k}"${compareLeftKey === k ? ' checked' : ''}></td>
                     <td class="cmp-td-check"><input type="radio" name="cmp-bm-right" value="${k}"${compareRightKey === k ? ' checked' : ''}></td>
                 </tr>`).join('')}
-                <tr class="cmp-section-row"><td colspan="3">Couches</td></tr>
-                ${layerRows}
             </tbody>
         </table>`;
     panel.querySelectorAll('input[name="cmp-bm-left"]').forEach(radio => {
@@ -914,6 +976,8 @@ function _buildCompareSidebarContent() {
             if (compareLeftLayer) map.removeLayer(compareLeftLayer);
             compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
             compareLeftLayer.addTo(map);
+            if (communesCmpLeft) communesCmpLeft.setStyle(_cmpStyleCommunes(compareLeftKey));
+            if (empriseCmpLeft) empriseCmpLeft.setStyle(_cmpStyleEmprise(compareLeftKey));
             _applyCompareClip();
         });
     });
@@ -921,6 +985,8 @@ function _buildCompareSidebarContent() {
         radio.addEventListener('change', () => {
             compareRightKey = radio.value;
             switchBasemap(compareRightKey);
+            communesPNR.setStyle(_cmpStyleCommunes(compareRightKey));
+            emprisePNR.setStyle(_cmpStyleEmprise(compareRightKey));
         });
     });
     panel.querySelectorAll('.cmp-layer-chk').forEach(chk => {
@@ -928,7 +994,7 @@ function _buildCompareSidebarContent() {
             const layerKey = chk.dataset.layer;
             const entry = CMP_DATA_PANES.find(d => d.key === layerKey);
             const mainChk = entry ? document.getElementById(entry.checkId) : null;
-            const leftChk  = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
+            const leftChk = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="left"]`);
             const rightChk = panel.querySelector(`.cmp-layer-chk[data-layer="${layerKey}"][data-col="right"]`);
             const l = leftChk?.checked, r = rightChk?.checked;
             // Activate main layer if it was inactive and at least one side is now checked
@@ -946,6 +1012,12 @@ function _buildCompareSidebarContent() {
                 if (row) row.classList.add('cmp-row-inactive');
             }
             cmpLayerSides[layerKey] = (l && r) ? 'both' : l ? 'left' : r ? 'right' : 'both';
+            // Sync left copy for communes
+            if (layerKey === 'communes' && communesCmpLeft) {
+                const active = !(!l && !r) && mainChk?.checked;
+                if (active && !map.hasLayer(communesCmpLeft)) communesCmpLeft.addTo(map);
+                else if (!active && map.hasLayer(communesCmpLeft)) map.removeLayer(communesCmpLeft);
+            }
             _applyCompareClip();
         });
     });
@@ -961,11 +1033,32 @@ function enableCompare() {
     CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
     compareLeftLayer = BASEMAP_TILES[compareLeftKey]('pane-compare');
     compareLeftLayer.addTo(map);
+    // Copies gauche pour communes + emprise (couleur adaptée au fond de plan gauche)
+    _makeCmpLeftPane('pane-communes-cmp-left', 204);
+    _makeCmpLeftPane('pane-emprise-cmp-left', 208);
+    communesCmpLeft = L.geoJSON(communesPNR.toGeoJSON(), { pane: 'pane-communes-cmp-left', style: _cmpStyleCommunes(compareLeftKey) });
+    empriseCmpLeft = L.geoJSON(emprisePNR.toGeoJSON(), { pane: 'pane-emprise-cmp-left', style: _cmpStyleEmprise(compareLeftKey) });
+    if (map.hasLayer(communesPNR)) communesCmpLeft.addTo(map);
+    empriseCmpLeft.addTo(map);
+    // Original communes + emprise : style du fond de plan droit
+    communesPNR.setStyle(_cmpStyleCommunes(compareRightKey));
+    emprisePNR.setStyle(_cmpStyleEmprise(compareRightKey));
     compareDivX = 0.5;
     _applyCompareClip();
     map.on('move zoomend', _applyCompareClip);
+    // Fade out sidebar sections avant d'ajouter compare-mode
+    const _cmpSecs = document.querySelectorAll('#sidebar-page-1 .sidebar-search, #sidebar-page-1 .control-group');
+    _cmpSecs.forEach((el, i) => {
+        el.style.transition = `opacity 180ms ${i * 25}ms ease, transform 180ms ${i * 25}ms ease`;
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-8px)';
+    });
+    setTimeout(() => {
+        document.getElementById('sidebar-page-1')?.classList.add('compare-mode');
+        _cmpSecs.forEach(el => { el.style.transition = ''; el.style.opacity = ''; el.style.transform = ''; });
+    }, 200);
     const panel = document.getElementById('compare-sidebar-panel');
-    if (panel) { panel.style.display = 'block'; _buildCompareSidebarContent(); }
+    if (panel) { _buildCompareSidebarContent(); requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.add('open'))); }
     const mapEl = document.getElementById('map');
     compareDivEl = document.createElement('div');
     compareDivEl.className = 'compare-divider';
@@ -975,9 +1068,11 @@ function enableCompare() {
     L.DomEvent.on(compareDivEl, 'mousedown', function (e) {
         L.DomEvent.stop(e);
         map.dragging.disable();
+        compareDivEl.classList.add('dragging');
         const onMove = ev => _dragCompare(ev.clientX);
         const onUp = () => {
             map.dragging.enable();
+            compareDivEl.classList.remove('dragging');
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
         };
@@ -987,9 +1082,11 @@ function enableCompare() {
     L.DomEvent.on(compareDivEl, 'touchstart', function (e) {
         L.DomEvent.stop(e);
         map.dragging.disable();
+        compareDivEl.classList.add('dragging');
         const onMove = ev => _dragCompare(ev.touches[0].clientX);
         const onEnd = () => {
             map.dragging.enable();
+            compareDivEl.classList.remove('dragging');
             document.removeEventListener('touchmove', onMove);
             document.removeEventListener('touchend', onEnd);
         };
@@ -1005,10 +1102,30 @@ function disableCompare() {
     const toggle = document.getElementById('compare-toggle');
     if (toggle) toggle.checked = false;
     if (compareLeftLayer) { map.removeLayer(compareLeftLayer); compareLeftLayer = null; }
+    if (communesCmpLeft) { map.removeLayer(communesCmpLeft); communesCmpLeft = null; }
+    if (empriseCmpLeft) { map.removeLayer(empriseCmpLeft); empriseCmpLeft = null; }
     _clearAllClips();
+    applyBasemapStyles(currentBasemapKey);
     if (compareDivEl) { compareDivEl.remove(); compareDivEl = null; }
+    document.getElementById('sidebar-page-1')?.classList.remove('compare-mode');
     const panel = document.getElementById('compare-sidebar-panel');
-    if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+    if (panel) {
+        panel.classList.remove('open');
+        setTimeout(() => { panel.innerHTML = ''; }, 460);
+    }
+    // Fade in sections après suppression de compare-mode
+    setTimeout(() => {
+        const secs = document.querySelectorAll('#sidebar-page-1 .sidebar-search, #sidebar-page-1 .control-group');
+        secs.forEach((el, i) => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateX(-8px)';
+            el.style.transition = `opacity 220ms ${60 + i * 35}ms ease, transform 220ms ${60 + i * 35}ms ease`;
+        });
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            secs.forEach(el => { el.style.opacity = ''; el.style.transform = ''; });
+            setTimeout(() => secs.forEach(el => el.style.transition = ''), 500);
+        }));
+    }, 20);
     CMP_DATA_PANES.forEach(d => { cmpLayerSides[d.key] = 'both'; });
 }
 
@@ -1041,7 +1158,6 @@ contextMenu.innerHTML = `
     <div class="context-menu-item" onclick="document.getElementById('tool-area').click()"><i class="fas fa-draw-polygon"></i> Mesurer une surface</div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item" onclick="document.getElementById('tool-coords').click()"><i class="fas fa-crosshairs"></i> Copier coordonnées</div>
-    <div class="context-menu-item" onclick="document.getElementById('tool-export').click()"><i class="fas fa-camera"></i> Faire une capture</div>
     <div class="context-menu-divider"></div>
     <div class="context-menu-item danger" onclick="clearMeasure(); contextMenu.style.display='none';"><i class="fas fa-trash"></i> Nettoyer tout</div>
 `;
@@ -1059,10 +1175,11 @@ document.addEventListener('click', (e) => {
 
 const _eStyle = BASEMAP_STYLES[currentBasemapKey].emprise;
 const emprisePNR = L.geoJSON(null, {
+    pane: 'pane-emprise',
     style: {
-        color:     _eStyle.color,
-        weight:    _eStyle.weight,
-        opacity:   _eStyle.opacity,
+        color: _eStyle.color,
+        weight: _eStyle.weight,
+        opacity: _eStyle.opacity,
         dashArray: _eStyle.dashArray || null,
         fillColor: 'transparent'
     }
@@ -1077,6 +1194,9 @@ fetch('data/Emprise_PNR.geojson')
         emprisePNR.addData(data);
         applyBasemapStyles(currentBasemapKey);
         if (emprisePNR.getBounds().isValid()) map.fitBounds(emprisePNR.getBounds());
+        if (window._miniMap && window._miniMap._miniMap) {
+            L.geoJSON(data, { style: { color: '#2e7d32', weight: 2, opacity: 1, fillColor: '#81c784', fillOpacity: 0.3 } }).addTo(window._miniMap._miniMap);
+        }
     })
     .catch(err => console.warn('[Emprise]', err.message));
 
@@ -1108,7 +1228,7 @@ fetch('data/Communes_PNR.geojson')
             return { name, bounds };
         }).filter(c => c.name && c.bounds.isValid());
         if (window._miniMap && window._miniMap._miniMap) {
-            L.geoJSON(data, { style: { color: '#1e6b45', weight: 1, fillOpacity: 0, opacity: 0.7 } }).addTo(window._miniMap._miniMap);
+            L.geoJSON(data, { style: { color: '#1b5e20', weight: 0.8, opacity: 0.7, fillOpacity: 0, dashArray: '3,3' } }).addTo(window._miniMap._miniMap);
         }
     })
     .catch(err => console.warn('[Communes]', err.message));
@@ -1313,46 +1433,47 @@ const ombrageRaster = L.tileLayer(
     { attribution: '&copy; PNR du Mont-Ventoux – Ombrage', maxZoom: 19, maxNativeZoom: 17, opacity: 1, pane: 'pane-ombrage' }
 );
 
-const GEOM_ZOOM      = 14;
-const MAX_CENTROIDS  = 15000;
-const MAX_GEOMS      = 4000;
+const GEOM_ZOOM = 14;
+const MAX_CENTROIDS = 15000;
+const MAX_GEOMS = 4000;
 
 class ClusteredArcGISLayer {
     constructor(serviceUrl, geomStyle, options = {}) {
-        this.serviceUrl    = serviceUrl;
-        this.geomZoom      = options.geomZoom  ?? GEOM_ZOOM;
-        this.maxItems      = options.maxItems  ?? 2000;
-        this.debounceMs    = options.debounce  ?? 400;
-        this.label         = options.label     ?? 'Couche';
-        this._clusterHue   = options.clusterHue   ?? 200;
-        this._geomStyle    = { ...geomStyle };
-        this._pane         = options.pane ?? null;
-        this._interactive  = options.interactive ?? false;
-        this._outFields    = options.outFields ?? 'FID';
+        this.serviceUrl = serviceUrl;
+        this.geomZoom = options.geomZoom ?? GEOM_ZOOM;
+        this.maxItems = options.maxItems ?? 2000;
+        this.debounceMs = options.debounce ?? 400;
+        this.label = options.label ?? 'Couche';
+        this._clusterHue = options.clusterHue ?? 200;
+        this._geomStyle = { ...geomStyle };
+        this._pane = options.pane ?? null;
+        this._interactive = options.interactive ?? false;
+        this._outFields = options.outFields ?? 'FID';
 
         this._cluster = L.markerClusterGroup({
             showCoverageOnHover: false,
-            maxClusterRadius:    60,
-            spiderfyOnMaxZoom:   false,
-            iconCreateFunction:  (c) => this._clusterIcon(c),
+            maxClusterRadius: 60,
+            spiderfyOnMaxZoom: false,
+            iconCreateFunction: (c) => this._clusterIcon(c),
+            clusterPane: this._pane ?? undefined,
         });
 
         this._geomLayer = L.geoJSON(null, {
-            pane:     this._pane ?? undefined,
+            pane: this._pane ?? undefined,
             renderer: L.canvas({ padding: 0.5, pane: this._pane ?? undefined }),
-            style:    () => ({ ...this._geomStyle }),
+            style: () => ({ ...this._geomStyle }),
             interactive: this._interactive,
             onEachFeature: this._interactive ? (f, layer) => this._bindPopup(f, layer) : undefined,
         });
 
         this._centroidIds = new Set();
-        this._geomIds     = new Set();
+        this._geomIds = new Set();
         this._ctrlC = null;
         this._ctrlG = null;
         this._timer = null;
-        this._map   = null;
-        this._on    = false;
-        this._mode  = null;
+        this._map = null;
+        this._on = false;
+        this._mode = null;
     }
 
     _clusterIcon(cluster) {
@@ -1361,8 +1482,8 @@ class ClusteredArcGISLayer {
         const size = Math.round(18 + t * 26);
         const lig = Math.round(78 - t * 44);
         const sat = Math.round(55 + t * 33);
-        const h   = this._clusterHue;
-        const bg  = `hsl(${h},${sat}%,${lig}%)`;
+        const h = this._clusterHue;
+        const bg = `hsl(${h},${sat}%,${lig}%)`;
         const bdr = `hsl(${h},${sat}%,${Math.max(15, lig - 18)}%)`;
         const label = n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
         const fs = Math.round(size * 0.38);
@@ -1370,7 +1491,7 @@ class ClusteredArcGISLayer {
         return L.divIcon({
             html: `<div class="arcgis-cluster-dot" style="width:${size}px;height:${size}px;background:${bg};border-color:${bdr};font-size:${fs}px;color:${txtColor}">${label}</div>`,
             className: '',
-            iconSize:   [size, size],
+            iconSize: [size, size],
             iconAnchor: [size / 2, size / 2],
         });
     }
@@ -1404,21 +1525,44 @@ class ClusteredArcGISLayer {
 
     init(map) { this._map = map; }
 
+    preload() {
+        if (this._on || this._preloaded) return;
+        if (!this._map) return;
+        this._preloaded = true;
+        const zoom = this._map.getZoom();
+        const bbox = this._bbox();
+        if (zoom < this.geomZoom) {
+            this._mode = 'cluster';
+            this._loadCentroids(bbox).catch(() => { });
+        } else {
+            this._mode = 'geom';
+            this._loadGeometries(bbox).catch(() => { });
+        }
+    }
+
     enable() {
         if (this._on) return;
         this._on = true;
+        if (this._preloaded && this._mode) {
+            if (this._mode === 'cluster' && !this._map.hasLayer(this._cluster)) {
+                this._map.addLayer(this._cluster);
+            } else if (this._mode === 'geom' && !this._map.hasLayer(this._geomLayer)) {
+                this._map.addLayer(this._geomLayer);
+            }
+        }
         this._schedule(false);
     }
 
     disable() {
-        this._on   = false;
+        this._on = false;
+        this._preloaded = false;
         this._mode = null;
         this._cancelAll();
         this._cluster.clearLayers();
         this._geomLayer.clearLayers();
         this._centroidIds.clear();
         this._geomIds.clear();
-        if (this._map?.hasLayer(this._cluster))   this._map.removeLayer(this._cluster);
+        if (this._map?.hasLayer(this._cluster)) this._map.removeLayer(this._cluster);
         if (this._map?.hasLayer(this._geomLayer)) this._map.removeLayer(this._geomLayer);
         toolInfo.hide();
     }
@@ -1498,7 +1642,7 @@ class ClusteredArcGISLayer {
         for (let row = 0; row < 3; row++) {
             for (let col = 0; col < 3; col++) {
                 cells.push([
-                    (w + col * dw).toFixed(6),       (s + row * dh).toFixed(6),
+                    (w + col * dw).toFixed(6), (s + row * dh).toFixed(6),
                     (w + (col + 1) * dw).toFixed(6), (s + (row + 1) * dh).toFixed(6),
                 ].join(','));
             }
@@ -1650,33 +1794,43 @@ class ClusteredArcGISLayer {
 
 const terrassesLayer = new ClusteredArcGISLayer(
     'https://services5.arcgis.com/y9Ov7ybbaxLMONwL/arcgis/rest/services/TERRASSES/FeatureServer/0/query',
-    { color: '#e74c3c', weight: 1.5, opacity: 0.9, fillColor: '#c0392b', fillOpacity: 0.45 },
-    { debounce: 400, label: 'Terrasses RF', clusterHue: 6, pane: 'pane-terrasses', interactive: true, outFields: 'FID,Shape__Area,Shape__Length' }
+    { color: '#1aff01', weight: 1.5, opacity: 0.9, fillColor: '#1aff01', fillOpacity: 0.45 },
+    { debounce: 400, label: 'Terrasses RF', clusterHue: 114, pane: 'pane-terrasses', interactive: true, outFields: 'FID,Shape__Area,Shape__Length' }
 );
 
 const rupturesLayer = new ClusteredArcGISLayer(
     'https://services5.arcgis.com/y9Ov7ybbaxLMONwL/arcgis/rest/services/ruptures_squelette/FeatureServer/0/query',
-    { color: '#e67e22', weight: 2, opacity: 0.9, fillOpacity: 0 },
-    { debounce: 400, label: 'Ruptures de pentes', clusterHue: 28, pane: 'pane-ruptures' }
+    { color: '#ffaf01', weight: 2, opacity: 0.9, fillOpacity: 0 },
+    { debounce: 400, label: 'Ruptures de pentes', clusterHue: 41, pane: 'pane-ruptures' }
 );
 
 terrassesLayer.init(map);
 rupturesLayer.init(map);
 
 map.on('moveend', () => { terrassesLayer.onMove(false); rupturesLayer.onMove(false); });
-map.on('zoomend', () => { terrassesLayer.onMove(true);  rupturesLayer.onMove(true);  });
+map.on('zoomend', () => { terrassesLayer.onMove(true); rupturesLayer.onMove(true); });
+
+// Préchargement : données vectorielles en arrière-plan + tuiles raster pré-cachées
+map.whenReady(() => {
+    terrassesLayer.preload();
+    rupturesLayer.preload();
+    [probabilites, mntOmbrage, ombrageRaster].forEach(lyr => {
+        lyr.setOpacity(0);
+        lyr.addTo(map);
+    });
+});
 
 const layerMapping = {
-    'layer-communes':     communesPNR,
-    'layer-parcelles':    parcellesPNR,
+    'layer-communes': communesPNR,
+    'layer-parcelles': parcellesPNR,
     'layer-probabilites': probabilites,
-    'layer-mnt-ombrage':  mntOmbrage,
-    'layer-ombrage':      ombrageRaster,
+    'layer-mnt-ombrage': mntOmbrage,
+    'layer-ombrage': ombrageRaster,
 };
 
 const vectorLayerMapping = {
     'layer-terrasses': terrassesLayer,
-    'layer-ruptures':  rupturesLayer,
+    'layer-ruptures': rupturesLayer,
 };
 
 let layerOrderState = [...LAYER_PANES];
@@ -1690,10 +1844,10 @@ function applyLayerZOrder() {
 
 function _orderSymbol(paneId) {
     const colorMap = {
-        'pane-communes':     () => document.getElementById('color-communes')?.value || '#2c3e50',
-        'pane-parcelles':    () => document.getElementById('color-parcelles')?.value || '#f1c40f',
-        'pane-terrasses':    () => document.getElementById('color-terrasses')?.value || '#e74c3c',
-        'pane-ruptures':     () => document.getElementById('color-ruptures')?.value || '#e67e22',
+        'pane-communes': () => document.getElementById('color-communes')?.value || '#2c3e50',
+        'pane-parcelles': () => document.getElementById('color-parcelles')?.value || '#f1c40f',
+        'pane-terrasses': () => document.getElementById('color-terrasses')?.value || '#1aff01',
+        'pane-ruptures': () => document.getElementById('color-ruptures')?.value || '#ffaf01',
     };
     if (paneId === 'pane-probabilites')
         return '<span class="order-sym" style="width:20px;height:10px;border-radius:3px;background:linear-gradient(90deg,#ffffff,#508c32,#0a3c05);border:1px solid rgba(0,0,0,0.1);"></span>';
@@ -1729,8 +1883,8 @@ function renderLayerOrderPanel() {
         const isTop = reversedIdx === 0;
         const isBot = reversedIdx === layerOrderState.length - 1;
         const badge = isTop ? '<span class="layer-order-badge badge-top">▲ haut</span>'
-                    : isBot ? '<span class="layer-order-badge badge-bot">▼ bas</span>'
-                    : '';
+            : isBot ? '<span class="layer-order-badge badge-bot">▼ bas</span>'
+                : '';
         row.innerHTML = `
             <i class="fas fa-grip-vertical drag-handle"></i>
             <span class="layer-order-num">${reversedIdx + 1}</span>
@@ -1783,6 +1937,7 @@ document.querySelectorAll('.sidebar-tab').forEach(tab => {
     });
 });
 
+const rasterPreloadedIds = new Set(['layer-probabilites', 'layer-mnt-ombrage', 'layer-ombrage']);
 Object.keys(layerMapping).forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1790,13 +1945,20 @@ Object.keys(layerMapping).forEach(id => {
     const sliderId = 'slider-' + id.replace('layer-', '').replace('mnt-ombrage', 'mnt') + '-container';
     const sliderEl = document.getElementById(sliderId);
     el.addEventListener('change', e => {
-        if (e.target.checked) {
-            map.addLayer(layer);
-            if (sliderEl) sliderEl.style.display = 'flex';
+        if (rasterPreloadedIds.has(id)) {
+            // Couche raster pré-ajoutée : toggle par opacité
+            const opKey = id.replace('layer-', '').replace('mnt-ombrage', 'mnt');
+            const slider = document.getElementById('opacity-' + opKey);
+            const op = slider ? parseInt(slider.value) / 100 : 1;
+            layer.setOpacity(e.target.checked ? op : 0);
         } else {
-            if (map.hasLayer(layer)) map.removeLayer(layer);
-            if (sliderEl) sliderEl.style.display = 'none';
+            if (e.target.checked) {
+                map.addLayer(layer);
+            } else {
+                if (map.hasLayer(layer)) map.removeLayer(layer);
+            }
         }
+        if (sliderEl) sliderEl.style.display = e.target.checked ? 'flex' : 'none';
         updateFloatingLegend();
     });
 });
@@ -1898,7 +2060,7 @@ if (colorRuptures) {
 
 const modalOverlay = document.getElementById('info-modal');
 const modalClose = document.getElementById('modal-close');
-const btnInfo = document.getElementById('btn-info-footer');
+const btnInfo = document.getElementById('btn-info-header');
 
 function openModal() {
     if (modalOverlay) modalOverlay.classList.add('active');
@@ -2025,3 +2187,4 @@ if (window.innerWidth <= 768) {
 }
 
 updateFloatingLegend();
+

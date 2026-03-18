@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr">
 
 <head>
@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <link rel="icon" href="media/LogoUA.png" type="image/png">
-    <link rel="stylesheet" href="styles.css?v=39">
+    <link rel="stylesheet" href="styles.css?v=42">
 </head>
 
 <body>
@@ -67,13 +67,17 @@
                 <p class="header-subtitle">Terrasses en pierres sèches</p>
             </div>
             <div class="header-docs">
-                <button class="header-doc-btn" title="Rapport de diagnostic — disponible prochainement" disabled>
-                    <i class="fas fa-file-pdf"></i>
-                    <span>Diagnostic</span>
+                <button id="btn-info-header" class="header-doc-btn" style="cursor:pointer; margin-right: 16px;" title="Informations">
+                    <i class="fas fa-info-circle"></i>
+                    <span>Informations</span>
                 </button>
-                <button class="header-doc-btn" title="Rapport méthodologique — disponible prochainement" disabled>
+                <button class="header-doc-btn header-report-btn" title="Rapport de diagnostic - disponible prochainement" disabled>
                     <i class="fas fa-file-pdf"></i>
-                    <span>Méthodologie</span>
+                    <span>Rapport Diagnostic</span>
+                </button>
+                <button class="header-doc-btn header-report-btn" title="Rapport méthodologique - disponible prochainement" disabled>
+                    <i class="fas fa-file-pdf"></i>
+                    <span>Rapport Méthodologie</span>
                 </button>
             </div>
             <button class="header-toggle-btn" id="header-toggle" title="Replier le header">
@@ -136,12 +140,12 @@
                                         onclick="document.getElementById('color-terrasses').click()">
                                         <i class="fas fa-pen"></i>
                                     </button>
-                                    <input type="color" id="color-terrasses" value="#e74c3c"
+                                    <input type="color" id="color-terrasses" value="#1aff01"
                                         class="color-picker-hidden">
                                 </div>
                                 <div class="legend-detail">
                                     <span class="legend-swatch" id="legend-swatch-terrasses"
-                                        style="background: rgba(231,76,60,0.4); border: 2px solid #e74c3c;"></span>
+                                        style="background: rgba(26,255,1,0.4); border: 2px solid #1aff01;"></span>
                                 </div>
                                 <div class="slider-container" id="slider-terrasses-container" style="display: none;">
                                     <span class="slider-icon"><i class="fas fa-adjust"></i></span>
@@ -181,11 +185,11 @@
                                         onclick="document.getElementById('color-ruptures').click()">
                                         <i class="fas fa-pen"></i>
                                     </button>
-                                    <input type="color" id="color-ruptures" value="#e67e22" class="color-picker-hidden">
+                                    <input type="color" id="color-ruptures" value="#ffaf01" class="color-picker-hidden">
                                 </div>
                                 <div class="legend-detail">
                                     <span class="legend-swatch legend-swatch-line" id="legend-swatch-ruptures"
-                                        style="border-bottom: 3px solid #e67e22;"></span>
+                                        style="border-bottom: 3px solid #ffaf01;"></span>
                                 </div>
                                 <div class="slider-container" id="slider-ruptures-container" style="display: none;">
                                     <span class="slider-icon"><i class="fas fa-adjust"></i></span>
@@ -369,9 +373,6 @@
                         84</span> &nbsp;|&nbsp; <span class="footer-cc">CC BY-SA 4.0</span></p>
             </div>
             <div class="footer-right">
-                <button id="btn-info-footer" class="footer-btn">
-                    <i class="fas fa-info-circle"></i> Informations
-                </button>
             </div>
             <button class="footer-toggle-btn" id="footer-toggle" title="Replier le footer">
                 <i class="fas fa-chevron-down"></i>
@@ -380,69 +381,85 @@
     </div>
 
     <div id="info-modal" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content info-modal">
             <span class="modal-close" id="modal-close">&times;</span>
             <h2>Web SIG - PNR du Mont-Ventoux</h2>
-            <p>
-                Interface Web SIG développée dans le cadre du <strong>Master GEOTER</strong> d'Avignon Université.
-            </p>
-            <p><strong>Objectif :</strong> visualiser les résultats des méthodes automatisées utilisées pour
-                l'identification des
-                <strong>terrasses en pierres sèches</strong> sur le territoire du PNR du Mont-Ventoux.
-            </p>
-            <div class="modal-section">
-                <h3 class="modal-section-title"><i class="fas fa-layer-group"></i> Couches</h3>
-                <p class="modal-section-text">Activez les couches via le panneau gauche. Ajustez opacité et couleurs.
-                    Réorganisez l'ordre via l'onglet « Ordre ».</p>
-            </div>
-            <div class="modal-section">
-                <h3 class="modal-section-title"><i class="fas fa-tools"></i> Outils</h3>
-                <div class="modal-tools-grid">
-                    <span class="modal-tool"><i class="fas fa-ruler"></i> Distance</span>
-                    <span class="modal-tool"><i class="fas fa-draw-polygon"></i> Surface</span>
-                    <span class="modal-tool"><i class="fas fa-crosshairs"></i> Coordonnées</span>
-                    <span class="modal-tool"><i class="fas fa-camera"></i> Capture</span>
+            <p>Interface <strong>Web SIG</strong> développée dans le cadre du <strong>Master GEOTER</strong>, Avignon Université.
+               Objectif : visualiser les résultats des méthodes automatisées d'identification des <strong>terrasses en pierres sèches</strong> sur le territoire du PNR du Mont-Ventoux.</p>
+
+            <div class="info-modal-body">
+                <div>
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-tools"></i> Barre d'outils</h3>
+                        <div class="modal-tools-grid">
+                            <span class="modal-tool"><i class="fas fa-home"></i> Accueil</span>
+                            <span class="modal-tool"><i class="fas fa-hand"></i> Navigation</span>
+                            <span class="modal-tool"><i class="fas fa-ruler"></i> Distance</span>
+                            <span class="modal-tool"><i class="fas fa-draw-polygon"></i> Surface</span>
+                            <span class="modal-tool"><i class="fas fa-crosshairs"></i> Coordonnées</span>
+                            <span class="modal-tool"><i class="fas fa-location-dot"></i> Ma position</span>
+                            <span class="modal-tool"><i class="fas fa-expand"></i> Plein écran</span>
+                            <span class="modal-tool"><i class="fas fa-file-export"></i> Export Terrasses</span>
+                        </div>
+                        <p class="modal-section-hint">
+                            <kbd>Échap</kbd> navigation · <kbd>D</kbd> distance · <kbd>A</kbd> surface · <kbd>X</kbd> coordonnées · <kbd>L</kbd> localiser · <kbd>N</kbd> nuit · <kbd>Clic droit</kbd> menu contextuel
+                        </p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-columns"></i> Vue comparateur</h3>
+                        <p class="modal-section-text">Activez le toggle <em>Vue comparateur</em> dans le panneau. Choisissez un fond de carte différent à gauche et à droite. La couleur des communes et de l'emprise s'adapte à chaque côté. Le séparateur est glissable.</p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-chart-area"></i> Profil altimétrique</h3>
+                        <p class="modal-section-text">L'outil <strong>Distance</strong> génère automatiquement un profil en travers (altitude relative au point de départ). Exportable en PNG.</p>
+                    </div>
+
+
                 </div>
-                <p class="modal-section-hint"><kbd>Échap</kbd> pour annuler l'outil actif · <kbd>Clic droit</kbd> pour
-                    le menu contextuel</p>
-            </div>
-            <div class="modal-section">
-                <h3 class="modal-section-title"><i class="fas fa-chart-area"></i> Profil en travers</h3>
-                <p class="modal-section-text">L'outil Distance génère automatiquement un profil altimétrique en
-                    référentiel local (altitude relative au point de départ).</p>
-            </div>
-            <div class="modal-section">
-                <h3 class="modal-section-title"><i class="fas fa-map"></i> Fonds de carte</h3>
-                <p class="modal-section-text">Esri Light · Google Satellite · OpenStreetMap</p>
-            </div>
-            <div class="modal-section">
-                <h3 class="modal-section-title"><i class="fas fa-circle-dot"></i> Cercles colorés sur la carte</h3>
-                <p class="modal-section-text">
-                    Les couches <strong>Terrasses</strong> et <strong>Ruptures de pentes</strong> contiennent un très
-                    grand nombre d'entités.
-                    Pour garantir la fluidité de navigation, un système de <strong>regroupement dynamique</strong>
-                    (clustering) est activé aux petites échelles (zoom &lt; 14) :
-                </p>
-                <ul class="modal-cluster-list">
-                    <li><span class="cluster-dot" style="background:#e74c3c"></span> Cercle rouge = groupe de terrasses
-                        — le chiffre indique le nombre d'entités regroupées</li>
-                    <li><span class="cluster-dot" style="background:#e67e22"></span> Cercle orange = groupe de ruptures
-                        de pentes</li>
-                    <li><i class="fas fa-search-plus" style="color:var(--accent-color);margin-right:4px"></i> Zoomez au
-                        niveau <strong>1 → 14</strong> pour afficher les géométries réelles</li>
-                </ul>
+
+                <div>
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-layer-group"></i> Couches</h3>
+                        <p class="modal-section-text">Activez les couches via le panneau gauche. Ajustez l'opacité avec le curseur. Personnalisez les couleurs avec le crayon. Réorganisez l'ordre via l'onglet <em>Ordre</em>.</p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-map"></i> Fonds de carte</h3>
+                        <p class="modal-section-text"><strong>Esri Light</strong> · <strong>Google Satellite</strong> · <strong>OpenStreetMap</strong><br>Chacun adapte automatiquement la symbologie des communes et de l'emprise PNR.</p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-circle-dot"></i> Clustering dynamique</h3>
+                        <p class="modal-section-text">
+                            Les couches <strong>Terrasses</strong> et <strong>Ruptures</strong> contiennent un très grand nombre d'entités. Un regroupement dynamique s'active aux petites échelles (zoom &lt; 14) :
+                        </p>
+                        <ul class="modal-cluster-list">
+                            <li><span class="cluster-dot" style="background:#1aff01"></span> Vert = groupe de terrasses</li>
+                            <li><span class="cluster-dot" style="background:#ffaf01"></span> Jaune = groupe de ruptures</li>
+                            <li><i class="fas fa-search-plus" style="color:var(--accent-color);margin-right:4px"></i> Zoomez au niveau <strong>14+</strong> pour les géométries réelles</li>
+                        </ul>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-moon"></i> Mode nuit</h3>
+                        <p class="modal-section-text">Active un thème sombre pour une utilisation terrain la nuit. La préférence est mémorisée entre les sessions. Raccourci : <kbd>N</kbd>.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="script.js?v=27"></script>
+    <script src="script.js?v=33"></script>
 </body>
 
 </html>
+
