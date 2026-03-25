@@ -1,0 +1,465 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrasses en Pierres Sèches</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400..700;1,400..700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.css">
+    <link rel="stylesheet"
+        href="https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol/dist/L.Control.Locate.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="icon" href="media/LogoUA.png" type="image/png">
+    <link rel="stylesheet" href="styles.css?v=42">
+</head>
+
+<body>
+    <div id="splash-screen" class="splash-screen">
+        <div class="splash-content">
+            <div class="splash-logos">
+                <img src="media/LogoUA.jpeg" alt="Université d'Avignon">
+                <div class="splash-logo-sep"></div>
+                <img src="media/LogoPNR.jpg" alt="PNR du Mont-Ventoux" class="splash-logo-main">
+                <div class="splash-logo-sep"></div>
+                <img src="media/LogoGeoter.jpeg" alt="Master GEOTER">
+            </div>
+            <h1 class="splash-title">Web SIG - M2 GEOTER 2025/2026</h1>
+            <p class="splash-cc">CC BY-SA 4.0 - Master GEOTER, Université d'Avignon, 2025/2026</p>
+            <div class="splash-progress-wrapper">
+                <div class="splash-progress-track">
+                    <div class="splash-progress-fill" id="splash-progress-fill"></div>
+                </div>
+                <div class="splash-progress-footer">
+                    <span class="splash-progress-status" id="splash-progress-status">Initialisation…</span>
+                    <span class="splash-progress-pct" id="splash-progress-pct">0 %</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <header class="main-header">
+            <div class="header-logos">
+                <a href="https://univ-avignon.fr/" target="_blank" class="header-logo-link">
+                    <img src="media/LogoUA.png" alt="Univ Avignon">
+                </a>
+                <div class="header-logo-sep"></div>
+                <a href="https://formations.univ-avignon.fr/formation/master-geographie-amenagement-environnement-et-developpement-geomatique-et-conduite-de-projets-territoriaux/"
+                    target="_blank" class="header-logo-link">
+                    <img src="media/LogoGeoter.png" alt="GéoTer">
+                </a>
+                <div class="header-logo-sep"></div>
+                <a href="https://www.parcduventoux.fr/" target="_blank" class="header-logo-link">
+                    <img src="media/LogoPNR.png" alt="PNR du Mont-Ventoux">
+                </a>
+            </div>
+            <div class="header-info">
+                <h1 class="header-title">Web SIG Ventoux</h1>
+                <p class="header-subtitle">Terrasses en pierres sèches</p>
+            </div>
+            <div class="header-docs">
+                <button id="btn-info-header" class="header-doc-btn" style="cursor:pointer; margin-right: 16px;" title="Informations">
+                    <i class="fas fa-info-circle"></i>
+                    <span>Informations</span>
+                </button>
+                <a href="media/RAPPORT_DIAGNOSTIC_M2_GEOTER_2025_2026.pdf" target="_blank" rel="noopener" class="header-doc-btn header-report-btn" title="Rapport de diagnostic">
+                    <i class="fas fa-file-pdf"></i>
+                    <span>Rapport Diagnostic</span>
+                </a>
+                <a href="media/RAPPORT_METHODOLOGIE_M2_GEOTER_2025_2026.pdf" target="_blank" rel="noopener" class="header-doc-btn header-report-btn" title="Rapport méthodologique">
+                    <i class="fas fa-file-pdf"></i>
+                    <span>Rapport Méthodologie</span>
+                </a>
+            </div>
+            <button class="header-toggle-btn" id="header-toggle" title="Replier le header">
+                <i class="fas fa-chevron-up"></i>
+            </button>
+        </header>
+
+        <div class="map-wrapper">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="sidebar-header-icon"><i class="fas fa-layer-group"></i></div>
+                    <div>
+                        <h2>Panneau de contrôle</h2>
+                        <p class="sidebar-header-sub">PNR du Mont-Ventoux</p>
+                    </div>
+                </div>
+
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab active" data-page="1">
+                        <i class="fas fa-layer-group"></i> Couches
+                    </button>
+                    <button class="sidebar-tab" data-page="2">
+                        <i class="fas fa-sort"></i> Ordre
+                    </button>
+                </div>
+
+                <div class="sidebar-content">
+                    <div class="sidebar-page active" id="sidebar-page-1">
+
+                        <div class="compare-toggle-wrap">
+                            <label class="switch">
+                                <input type="checkbox" id="compare-toggle">
+                                <span class="slider round"></span>
+                            </label>
+                            <label for="compare-toggle" class="control-label">
+                                <i class="fas fa-columns"></i> Vue comparateur
+                            </label>
+                        </div>
+                        <div id="compare-sidebar-panel"></div>
+
+                        <div class="sidebar-search">
+                            <div class="search-input-wrapper">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="commune-search" placeholder="Rechercher une commune…" autocomplete="off" spellcheck="false">
+                            </div>
+                            <div id="commune-search-results" class="search-results"></div>
+                        </div>
+
+                        <div class="control-group">
+                            <h2><span class="section-dot"></span>Couches résultats</h2>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-terrasses" value="terrasses">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-terrasses" class="control-label">Terrasses</label>
+                                    <button class="color-pen-btn" title="Personnaliser la couleur"
+                                        onclick="document.getElementById('color-terrasses').click()">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <input type="color" id="color-terrasses" value="#1aff01"
+                                        class="color-picker-hidden">
+                                </div>
+                                <div class="legend-detail">
+                                    <span class="legend-swatch" id="legend-swatch-terrasses"
+                                        style="background: rgba(26,255,1,0.4); border: 2px solid #1aff01;"></span>
+                                </div>
+                                <div class="slider-container" id="slider-terrasses-container" style="display: none;">
+                                    <span class="slider-icon"><i class="fas fa-adjust"></i></span>
+                                    <input type="range" id="opacity-terrasses" class="opacity-slider" min="0" max="100"
+                                        value="90" title="Ajuster l'opacité">
+                                </div>
+                            </div>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-probabilites" value="probabilites">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-probabilites" class="control-label control-label--wrap"
+                                        title="Probabilité d'occurrence des terrasses">Probabilité d'occurrence des terrasses</label>
+                                </div>
+                                <div class="legend-gradient-row">
+                                    <div class="legend-gradient-bar"
+                                        style="background: linear-gradient(90deg, #ffffff, #508c32, #0a3c05);"></div>
+                                </div>
+                                <div class="slider-container" id="slider-probabilites-container" style="display: none;">
+                                    <span class="slider-icon"><i class="fas fa-adjust"></i></span>
+                                    <input type="range" id="opacity-probabilites" class="opacity-slider" min="0"
+                                        max="100" value="100" title="Ajuster l'opacité">
+                                </div>
+                            </div>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-ruptures" value="ruptures">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-ruptures" class="control-label">Ruptures de pentes</label>
+                                    <button class="color-pen-btn" title="Personnaliser la couleur"
+                                        onclick="document.getElementById('color-ruptures').click()">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <input type="color" id="color-ruptures" value="#ffaf01" class="color-picker-hidden">
+                                </div>
+                                <div class="legend-detail">
+                                    <span class="legend-swatch legend-swatch-line" id="legend-swatch-ruptures"
+                                        style="border-bottom: 3px solid #ffaf01;"></span>
+                                </div>
+                                <div class="slider-container" id="slider-ruptures-container" style="display: none;">
+                                    <span class="slider-icon"><i class="fas fa-adjust"></i></span>
+                                    <input type="range" id="opacity-ruptures" class="opacity-slider" min="0" max="100"
+                                        value="90" title="Ajuster l'opacité">
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="control-group">
+                            <h2><span class="section-dot"></span>Topographie</h2>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-mnt-ombrage" value="mnt-ombrage">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-mnt-ombrage" class="control-label control-label--wrap">Modèle Numérique de Terrain</label>
+                                </div>
+                                <div class="legend-gradient-row">
+                                    <span class="legend-bound">Bas</span>
+                                    <div class="legend-gradient-bar"
+                                        style="background: linear-gradient(90deg, #285023 0%, #559637 18%, #91be55 35%, #c3d76e 50%, #e1cd73 63%, #d79b55 76%, #cd7d69 90%, #f5ebe1 100%);">
+                                    </div>
+                                    <span class="legend-bound">Haut</span>
+                                </div>
+                                <div class="slider-container" id="slider-mnt-container" style="display: none;">
+                                    <span class="slider-icon"><i class="fas fa-adjust"></i></span>
+                                    <input type="range" id="opacity-mnt" class="opacity-slider" min="0" max="100"
+                                        value="100" title="Ajuster l'opacité">
+                                </div>
+                            </div>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-ombrage" value="ombrage">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-ombrage" class="control-label">Ombrage</label>
+                                </div>
+
+                                <div class="slider-container" id="slider-ombrage-container" style="display: none;">
+                                    <span class="slider-icon"><i class="fas fa-adjust"></i></span>
+                                    <input type="range" id="opacity-ombrage" class="opacity-slider" min="0" max="100"
+                                        value="100" title="Ajuster l'opacité">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <h2><span class="section-dot"></span>Limites administratives</h2>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item" style="cursor:default; pointer-events:none; opacity:0.85;">
+                                    <span style="width:36px; flex-shrink:0;"></span>
+                                    <span class="control-label">Périmètre PNR</span>
+                                </div>
+                                <div class="legend-detail">
+                                    <span class="legend-swatch-line" id="legend-swatch-emprise"
+                                        style="border-bottom: 3px solid #ffffff; width:24px;"></span>
+                                </div>
+                            </div>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-communes" value="communes" checked>
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-communes" class="control-label">Communes du PNR</label>
+                                    <button class="color-pen-btn" title="Personnaliser la couleur"
+                                        onclick="document.getElementById('color-communes').click()">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <input type="color" id="color-communes" value="#fde047" class="color-picker-hidden">
+                                </div>
+                                <div class="legend-detail">
+                                    <span class="legend-swatch-line" id="legend-swatch-communes"
+                                        style="border-bottom: 2px dashed #fde047; width:24px;"></span>
+                                </div>
+                            </div>
+
+                            <div class="layer-block">
+                                <div class="checkbox-item">
+                                    <label class="switch">
+                                        <input type="checkbox" id="layer-parcelles" value="parcelles">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <label for="layer-parcelles" class="control-label"
+                                        style="flex-grow: 1;">Parcellaire</label>
+                                    <button class="color-pen-btn" title="Personnaliser la couleur"
+                                        onclick="document.getElementById('color-parcelles').click()">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <input type="color" id="color-parcelles" value="#f1c40f"
+                                        class="color-picker-hidden">
+                                </div>
+                                <div class="legend-detail">
+                                    <span class="legend-swatch" id="legend-swatch-parcelles"
+                                        style="border: 2px solid #f1c40f; background: rgba(241,196,15,0.15);"></span>
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <div class="control-group">
+                            <h2><span class="section-dot"></span>Fonds de carte</h2>
+                            <div class="layer-block basemap-group">
+                                <label class="basemap-radio-item">
+                                    <input type="radio" name="basemap" value="esriLight">
+                                    <span class="basemap-radio-inner">
+                                        <i class="fas fa-layer-group"></i>
+                                        <span>Esri Light</span>
+                                    </span>
+                                </label>
+                                <label class="basemap-radio-item">
+                                    <input type="radio" name="basemap" value="satellite" checked>
+                                    <span class="basemap-radio-inner">
+                                        <i class="fas fa-satellite"></i>
+                                        <span>Google Satellite</span>
+                                    </span>
+                                </label>
+                                <label class="basemap-radio-item">
+                                    <input type="radio" name="basemap" value="osm">
+                                    <span class="basemap-radio-inner">
+                                        <i class="fas fa-map"></i>
+                                        <span>OpenStreetMap</span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="sidebar-page" id="sidebar-page-2">
+                        <div class="control-group">
+                            <h2><span class="section-dot"></span>Ordre des calques</h2>
+                            <p class="layer-order-hint">Glissez-déposez pour réorganiser.<br>
+                                <span style="opacity:.65">▲ haut = premier plan &nbsp;·&nbsp; ▼ bas =
+                                    arrière-plan</span>
+                            </p>
+                            <div id="layer-order-panel" class="layer-order-panel"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </aside>
+
+            <button id="sidebar-toggle" class="sidebar-toggle" title="Masquer le panneau">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+
+            <main class="map-container" id="map"></main>
+
+            <div id="elevation-profile-container" class="elevation-panel">
+                <div class="elevation-header">
+                    <div class="elevation-header-left">
+                        <span><i class="fas fa-chart-area"></i> Profil en travers</span>
+                        <button id="export-profile-png" class="export-chart-btn">
+                            <i class="fas fa-download"></i> PNG
+                        </button>
+                    </div>
+                    <button id="close-elevation" title="Fermer"><i class="fas fa-times"></i></button>
+                </div>
+                <canvas id="elevationChart"></canvas>
+            </div>
+
+            <div id="coords-bar" class="coords-bar">
+                <span><i class="fas fa-map-pin"></i> <span id="coords-display">Survolez la carte…</span></span>
+                <span id="zoom-display" class="zoom-display"></span>
+            </div>
+
+        </div>
+
+        <footer class="main-footer" id="main-footer">
+            <div class="footer-left">
+                <p>© 2025/2026 - Master GEOTER - PNR du Mont-Ventoux &nbsp;|&nbsp; <span class="footer-crs">EPSG:4326 - WGS
+                        84</span> &nbsp;|&nbsp; <span class="footer-cc">CC BY-SA 4.0</span></p>
+            </div>
+            <div class="footer-right">
+            </div>
+            <button class="footer-toggle-btn" id="footer-toggle" title="Replier le footer">
+                <i class="fas fa-chevron-down"></i>
+            </button>
+        </footer>
+    </div>
+
+    <div id="info-modal" class="modal-overlay">
+        <div class="modal-content info-modal">
+            <span class="modal-close" id="modal-close">&times;</span>
+            <h2>Web SIG - PNR du Mont-Ventoux</h2>
+            <p>Interface <strong>Web SIG</strong> développée dans le cadre du <strong>Master GEOTER</strong>, Avignon Université.
+               Objectif : visualiser les résultats des méthodes automatisées d'identification des <strong>terrasses en pierres sèches</strong> sur le territoire du PNR du Mont-Ventoux.</p>
+
+            <div class="info-modal-body">
+                <div>
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-tools"></i> Barre d'outils</h3>
+                        <div class="modal-tools-grid">
+                            <span class="modal-tool"><i class="fas fa-home"></i> Accueil</span>
+                            <span class="modal-tool"><i class="fas fa-hand"></i> Navigation</span>
+                            <span class="modal-tool"><i class="fas fa-ruler"></i> Distance</span>
+                            <span class="modal-tool"><i class="fas fa-draw-polygon"></i> Surface</span>
+                            <span class="modal-tool"><i class="fas fa-crosshairs"></i> Coordonnées</span>
+                            <span class="modal-tool"><i class="fas fa-location-dot"></i> Ma position</span>
+                            <span class="modal-tool"><i class="fas fa-expand"></i> Plein écran</span>
+                            <span class="modal-tool"><i class="fas fa-file-export"></i> Export Terrasses</span>
+                        </div>
+                        <p class="modal-section-hint">
+                            <kbd>Échap</kbd> navigation · <kbd>D</kbd> distance · <kbd>A</kbd> surface · <kbd>X</kbd> coordonnées · <kbd>L</kbd> localiser · <kbd>N</kbd> nuit · <kbd>Clic droit</kbd> menu contextuel
+                        </p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-columns"></i> Vue comparateur</h3>
+                        <p class="modal-section-text">Activez le toggle <em>Vue comparateur</em> dans le panneau. Choisissez un fond de carte différent à gauche et à droite. La couleur des communes et de l'emprise s'adapte à chaque côté. Le séparateur est glissable.</p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-chart-area"></i> Profil altimétrique</h3>
+                        <p class="modal-section-text">L'outil <strong>Distance</strong> génère automatiquement un profil en travers (altitude relative au point de départ). Exportable en PNG.</p>
+                    </div>
+
+
+                </div>
+
+                <div>
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-layer-group"></i> Couches</h3>
+                        <p class="modal-section-text">Activez les couches via le panneau gauche. Ajustez l'opacité avec le curseur. Personnalisez les couleurs avec le crayon. Réorganisez l'ordre via l'onglet <em>Ordre</em>.</p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-map"></i> Fonds de carte</h3>
+                        <p class="modal-section-text"><strong>Esri Light</strong> · <strong>Google Satellite</strong> · <strong>OpenStreetMap</strong><br>Chacun adapte automatiquement la symbologie des communes et de l'emprise PNR.</p>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-circle-dot"></i> Clustering dynamique</h3>
+                        <p class="modal-section-text">
+                            Les couches <strong>Terrasses</strong> et <strong>Ruptures</strong> contiennent un très grand nombre d'entités. Un regroupement dynamique s'active aux petites échelles (zoom &lt; 14) :
+                        </p>
+                        <ul class="modal-cluster-list">
+                            <li><span class="cluster-dot" style="background:#1aff01"></span> Vert = groupe de terrasses</li>
+                            <li><span class="cluster-dot" style="background:#ffaf01"></span> Jaune = groupe de ruptures</li>
+                            <li><i class="fas fa-search-plus" style="color:var(--accent-color);margin-right:4px"></i> Zoomez au niveau <strong>14+</strong> pour les géométries réelles</li>
+                        </ul>
+                    </div>
+
+                    <div class="modal-section">
+                        <h3 class="modal-section-title"><i class="fas fa-moon"></i> Mode nuit</h3>
+                        <p class="modal-section-text">Active un thème sombre pour une utilisation terrain la nuit. La préférence est mémorisée entre les sessions. Raccourci : <kbd>N</kbd>.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js?v=33"></script>
+</body>
+
+</html>
+
